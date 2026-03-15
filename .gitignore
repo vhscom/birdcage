@@ -1,0 +1,7 @@
+birdcage
+birdcage.db
+*.db
+.env*
+*.key
+*.log
+certs/

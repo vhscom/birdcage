@@ -85,6 +85,7 @@ AGENT_KEY=%s
 
 # --- Server ---
 BASE_URL=%s
+WS_ALLOWED_ORIGINS=%s
 DB_PATH=birdcage.db
 # ADDR=:443  (derived from BASE_URL if omitted)
 
@@ -103,7 +104,7 @@ WG_LISTEN_PORT=%s
 WG_ENDPOINT=%s
 # WG_INTERFACE=wg0
 `, accessSecret, refreshSecret, registrationToken, agentKey,
-		baseURL,
+		baseURL, baseURL,
 		wgPrivKey, wgPort, wgEndpoint)
 
 	if err := os.WriteFile(".env", []byte(content), 0600); err != nil {

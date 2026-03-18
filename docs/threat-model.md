@@ -49,7 +49,7 @@ STRIDE analysis for Birdcage. This document maps each threat to the specific mit
 | # | Category | Threat | Component | Mitigation | Residual Risk |
 |---|----------|--------|-----------|------------|---------------|
 | 27 | **Spoofing** | Credential leakage to gateway | `proxy.go:46-47` | Reverse proxy strips `Cookie` and `Authorization` headers before forwarding to gateway | None — credentials never reach downstream |
-| 28 | **Tampering** | Header injection via proxy | `proxy.go:49-55` | `X-Forwarded-*` headers cleared before re-injecting via `SetXForwarded()`; hop-by-hop headers stripped automatically by `Rewrite`-based proxy | None — headers rebuilt from scratch |
+| 28 | **Tampering** | Header injection via proxy | `proxy.go:46-55` | Birdcage strips `Cookie`, `Authorization`, and all `X-Forwarded-*` / `Forwarded` headers before rebuilding `X-Forwarded-*` via `SetXForwarded()`; hop-by-hop header semantics handled by Go's `httputil.ReverseProxy` | None — headers rebuilt from scratch |
 | 29 | **Tampering** | Gateway token injection in non-connect frames | `bridge.go:177-201` | `injectToken()` only modifies JSON messages where `type=="req"` and `method=="connect"` and `params` exists; binary messages rejected | None — narrow injection criteria |
 | 30 | **Information Disclosure** | Response header leakage from gateway | `proxy.go:57-62` | `ModifyResponse` strips `Set-Cookie`, `Server`, `X-Powered-By` from gateway responses | None — sensitive headers removed |
 | 31 | **Denial of Service** | WebSocket bridge flooding | `bridge.go:149-162` | Rate limit: 100 messages per 1-second sliding window; binary messages rejected with close code 1003 | None — both text and binary abuse paths covered |

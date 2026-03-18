@@ -2,6 +2,10 @@
 
 Secure remote access layer for personal AI. One user, one claw, accessible from any browser, privately.
 
+[![CI](https://img.shields.io/github/actions/workflow/status/vhscom/birdcage/ci.yml?style=for-the-badge&label=CI)](https://github.com/vhscom/birdcage/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev/)
+[![License](https://img.shields.io/badge/License-AGPL_3.0-blue?style=for-the-badge)](COPYING)
+
 ```
 Browser ──────► Birdcage (VPS) ────► OpenClaw (home)
         cookie  auth + proxy   mesh  WireGuard agent

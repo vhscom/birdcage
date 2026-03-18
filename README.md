@@ -17,23 +17,34 @@ A claw is a local AI assistant like [OpenClaw](https://github.com/openclaw/openc
 
 ## Quick start
 
-**On the VPS** (point your domain's DNS A record to the server first):
+Point a DNS A record to your VPS (DNS-only, not proxied). Open ports 443, 80, and 51820/udp.
+
+**Build:**
+
+```sh
+git clone https://github.com/vhscom/birdcage.git && cd birdcage
+go build -o birdcage .
+sudo mv birdcage /usr/local/bin/
+```
+
+**On the VPS:**
 
 ```sh
 mkdir -p /opt/birdcage && cd /opt/birdcage
-birdcage init     # generates .env with secrets, WireGuard keypair, and registration token
-# edit .env — set GATEWAY_URL to the claw's mesh address (e.g. http://10.0.0.2:18789)
-sudo birdcage serve
+birdcage init                    # prompts for BASE_URL and WG endpoint
+sudo birdcage serve install      # installs and starts as a system service
 ```
 
 **On the home machine** (next to the claw):
 
 ```sh
-birdcage agent init https://your-vps.example.com <agent-key>
-sudo birdcage agent
+birdcage agent init https://your-domain.example.com <agent-key>
+sudo birdcage agent install
 ```
 
-Open `https://your-vps.example.com` in a browser and register with the token printed during init.
+Once the agent connects, edit `/opt/birdcage/.env` on the VPS to set `GATEWAY_URL` to the claw's mesh address (e.g. `http://10.0.0.2:18789`), then restart: `sudo systemctl restart birdcage`.
+
+Open `https://your-domain.example.com` in a browser and register with the token printed during init.
 
 ## What it does
 

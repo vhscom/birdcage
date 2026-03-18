@@ -13,13 +13,13 @@ Browser ──────► Birdcage (VPS) ────► OpenClaw (home)
 
 A claw is a local AI assistant like [OpenClaw](https://github.com/openclaw/openclaw) running on your home machine. Birdcage lets you reach it from anywhere after authenticating. Traffic is encrypted over WireGuard — your claw never touches the public internet.
 
-<img src="docs/screenshot.png" alt="birdcage registration screen" width="720">
+<video src="docs/demo.mp4" width="720" autoplay loop muted playsinline></video>
 
 ## Quick start
 
 Point a DNS A record to your VPS (DNS-only, not proxied). Open ports 443, 80, and 51820/udp.
 
-**Build:**
+**Build** (on the VPS, or cross-compile with `GOOS=linux GOARCH=amd64`):
 
 ```sh
 git clone https://github.com/vhscom/birdcage.git && cd birdcage
@@ -30,21 +30,34 @@ sudo mv birdcage /usr/local/bin/
 **On the VPS:**
 
 ```sh
-apt install -y wireguard-tools   # required for WireGuard peer management
+apt install -y wireguard-tools
 mkdir -p /opt/birdcage && cd /opt/birdcage
 birdcage init                    # prompts for BASE_URL and WG endpoint
 sudo birdcage serve install      # installs and starts as a system service
 ```
 
-**On the home machine** (macOS):
+**On the home machine:**
 
 ```sh
+# macOS
 brew install wireguard-tools wireguard-go
+
+# Linux
+apt install -y wireguard-tools
+
+# then
 birdcage agent init https://your-domain.example.com <agent-key>
 sudo birdcage agent install
 ```
 
-Once the agent connects, edit `/opt/birdcage/.env` on the VPS to set `GATEWAY_URL` to the claw's mesh address (e.g. `http://10.0.0.2:18789`), then restart: `sudo systemctl restart birdcage`.
+**Connect the gateway:** Configure your claw's gateway token, then edit `/opt/birdcage/.env` on the VPS:
+
+```sh
+GATEWAY_URL=http://10.0.0.2:18789     # claw's mesh address
+GATEWAY_TOKEN=<token from your claw>  # gateway auth token
+```
+
+Restart: `sudo systemctl restart birdcage`.
 
 Open `https://your-domain.example.com` in a browser and register with the token printed during init.
 

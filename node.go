@@ -221,6 +221,19 @@ func notifyNodeSync() {
 		peers := make([]syncPeer, 0)
 		var self *syncSelf
 
+		// Always include self info, even if pubkey is still pending
+		var selfIP string
+		var selfPort int
+		if err := store.QueryRow(
+			"SELECT allowed_ips, wg_listen_port FROM node WHERE id = ?", target.nodeID,
+		).Scan(&selfIP, &selfPort); err == nil {
+			self = &syncSelf{
+				NodeID:     target.nodeID,
+				MeshIP:     selfIP,
+				ListenPort: selfPort,
+			}
+		}
+
 		// Add server as peer
 		if serverPeer != nil {
 			peers = append(peers, *serverPeer)
@@ -228,11 +241,6 @@ func notifyNodeSync() {
 
 		for _, n := range allNodes {
 			if n.ID == target.nodeID {
-				self = &syncSelf{
-					NodeID:     n.ID,
-					MeshIP:     n.AllowedIPs,
-					ListenPort: n.ListenPort,
-				}
 				continue
 			}
 			ep := ""

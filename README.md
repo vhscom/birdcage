@@ -13,7 +13,7 @@ Browser ──────► Birdcage (VPS) ────► OpenClaw (home)
 
 A claw is a local AI assistant like [OpenClaw](https://github.com/openclaw/openclaw) running on your home machine. Birdcage lets you reach it from anywhere after authenticating. Traffic is encrypted over WireGuard — your claw never touches the public internet.
 
-<img src="docs/screenshot.png" alt="birdcage registration screen" width="480">
+<img src="docs/screenshot.png" alt="birdcage registration screen" width="720">
 
 ## Quick start
 

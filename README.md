@@ -30,14 +30,16 @@ sudo mv birdcage /usr/local/bin/
 **On the VPS:**
 
 ```sh
+apt install -y wireguard-tools   # required for WireGuard peer management
 mkdir -p /opt/birdcage && cd /opt/birdcage
 birdcage init                    # prompts for BASE_URL and WG endpoint
 sudo birdcage serve install      # installs and starts as a system service
 ```
 
-**On the home machine** (next to the claw):
+**On the home machine** (macOS):
 
 ```sh
+brew install wireguard-tools wireguard-go
 birdcage agent init https://your-domain.example.com <agent-key>
 sudo birdcage agent install
 ```

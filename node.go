@@ -436,7 +436,14 @@ func serverUpdatePeer(nodeID int) {
 
 	if out, err := exec.Command("wg", args...).CombinedOutput(); err != nil {
 		slog.Error("wg set peer failed", "error", err, "output", string(out), "node", nodeID)
-	} else {
-		slog.Info("peer updated", "node", nodeID, "pubkey", pubkey[:8]+"...")
+		return
+	}
+	slog.Info("peer updated", "node", nodeID, "pubkey", pubkey[:8]+"...")
+
+	// Add route for the peer's allowed IPs through the WireGuard interface
+	if runtime.GOOS == "linux" {
+		if out, err := exec.Command("ip", "route", "replace", allowedIPs, "dev", iface).CombinedOutput(); err != nil {
+			slog.Warn("route add failed", "error", err, "output", string(out))
+		}
 	}
 }

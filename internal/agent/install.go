@@ -26,6 +26,8 @@ var launchdPlist = template.Must(template.New("plist").Parse(`<?xml version="1.0
     <dict>
         <key>BIRDCAGE_AGENT_CONFIG_DIR</key>
         <string>{{.ConfigDir}}</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

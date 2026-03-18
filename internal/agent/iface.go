@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,6 +149,13 @@ func ensureInterfaceDarwin(iface, keyPath string, listenPort int, meshIP string)
 	out, err = exec.Command("ifconfig", iface, "up").CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("ifconfig %s up: %w: %s", iface, err, out)
+	}
+
+	// Add route for the mesh subnet so traffic reaches peers via the WireGuard interface
+	if out, err := exec.Command("route", "add", "-net", "10.0.0.0/24", "-interface", iface).CombinedOutput(); err != nil {
+		if !strings.Contains(string(out), "File exists") {
+			slog.Warn("route add failed", "error", err, "output", string(out))
+		}
 	}
 
 	return iface, nil

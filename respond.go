@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -40,6 +41,12 @@ func jsonError(w http.ResponseWriter, status int, code, msg string) {
 
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func jsonCreated(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(v)
 }
 
@@ -91,7 +98,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // --- Cookie helpers ---
 
 func setAuthCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure set dynamically via cfg.CookieSecure
 		Name:     name,
 		Value:    value,
 		Path:     "/",
@@ -103,7 +110,7 @@ func setAuthCookie(w http.ResponseWriter, name, value string, maxAge time.Durati
 }
 
 func deleteAuthCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- deletion cookie; Secure set dynamically
 		Name:     name,
 		Value:    "",
 		Path:     "/",
@@ -145,6 +152,19 @@ func connIP(r *http.Request) string {
 
 func clientIP(r *http.Request) string {
 	return connIP(r)
+}
+
+// --- Parsing helpers ---
+
+func numericID(v any) (int, bool) {
+	switch id := v.(type) {
+	case float64:
+		return int(id), true
+	case string:
+		n, err := strconv.Atoi(id)
+		return n, err == nil
+	}
+	return 0, false
 }
 
 // --- Error logging ---

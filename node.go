@@ -266,7 +266,9 @@ func notifyNodeSync() {
 			},
 		}
 		data, _ := json.Marshal(msg)
-		target.conn.safeWrite(websocket.TextMessage, data)
+		if target.conn != nil {
+			target.conn.safeWrite(websocket.TextMessage, data)
+		}
 	}
 }
 

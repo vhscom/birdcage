@@ -43,6 +43,12 @@ func jsonOK(w http.ResponseWriter, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+func jsonCreated(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(v)
+}
+
 // --- Request parsing ---
 
 const maxBodySize = 1 << 20 // 1 MB
@@ -91,7 +97,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // --- Cookie helpers ---
 
 func setAuthCookie(w http.ResponseWriter, name, value string, maxAge time.Duration) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure set dynamically via cfg.CookieSecure
 		Name:     name,
 		Value:    value,
 		Path:     "/",
@@ -103,7 +109,7 @@ func setAuthCookie(w http.ResponseWriter, name, value string, maxAge time.Durati
 }
 
 func deleteAuthCookie(w http.ResponseWriter, name string) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- deletion cookie; Secure set dynamically
 		Name:     name,
 		Value:    "",
 		Path:     "/",

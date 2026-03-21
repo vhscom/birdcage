@@ -106,6 +106,32 @@ func endAllSessions(userID int) {
 	}
 }
 
+func revokeSessions(scope string, targetID any) (int64, string, string) {
+	var res int64
+	switch scope {
+	case "all":
+		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE expires_at > datetime('now')")
+		res, _ = r.RowsAffected()
+	case "user":
+		uid, ok := numericID(targetID)
+		if !ok {
+			return 0, "INVALID_ID", "User ID required"
+		}
+		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE user_id = ? AND expires_at > datetime('now')", uid)
+		res, _ = r.RowsAffected()
+	case "session":
+		sid, ok := targetID.(string)
+		if !ok || sid == "" {
+			return 0, "INVALID_ID", "Session ID required"
+		}
+		r, _ := store.Exec("UPDATE session SET expires_at = datetime('now') WHERE id = ?", sid)
+		res, _ = r.RowsAffected()
+	default:
+		return 0, "INVALID_SCOPE", "Scope must be all, user, or session"
+	}
+	return res, "", ""
+}
+
 func bumpRefreshGen(sid string) (int, error) {
 	if _, err := store.Exec("UPDATE session SET refresh_gen = refresh_gen + 1 WHERE id = ?", sid); err != nil {
 		return 0, err

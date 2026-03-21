@@ -25,6 +25,7 @@ import (
 
 	"birdcage/internal/agent"
 	"birdcage/internal/cli"
+	"birdcage/internal/ctl"
 )
 
 //go:embed public
@@ -78,6 +79,10 @@ func main() {
 			os.Args = os.Args[1:]
 			agent.Run()
 			return
+		case "ctl":
+			os.Args = os.Args[1:]
+			ctl.Run()
+			return
 		case "--version", "-v", "version":
 			fmt.Println("birdcage " + version)
 			return
@@ -109,6 +114,9 @@ func printHelp() {
 	fmt.Printf("  %-30s %s\n", "agent init <server> <key>", "Save agent config")
 	fmt.Printf("  %-30s %s\n", "agent install", "Install as system service")
 	fmt.Printf("  %-30s %s\n", "agent uninstall", "Remove system service")
+	fmt.Println()
+	fmt.Println("Management")
+	fmt.Printf("  %-30s %s\n", "ctl", "Open the management TUI")
 	fmt.Println()
 	fmt.Println("  Run 'birdcage <command> --help' for command-specific help.")
 }
@@ -194,6 +202,16 @@ func runServe() {
 		}
 		proxy.ServeHTTP(w, r)
 	})))
+
+	// --- Ops API (agent key for reads, provisioning secret for writes) ---
+	mux.Handle("GET /ops/sessions", requireAgentKey(http.HandlerFunc(handleOpsSessions)))
+	mux.Handle("POST /ops/sessions/revoke", requireAgentKey(http.HandlerFunc(handleOpsSessionRevoke)))
+	mux.Handle("GET /ops/agents", requireAgentKey(http.HandlerFunc(handleOpsAgentList)))
+	mux.Handle("POST /ops/agents", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentCreate)))
+	mux.Handle("DELETE /ops/agents/{name}", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentRevoke)))
+	mux.Handle("GET /ops/events", requireAgentKey(http.HandlerFunc(handleOpsEvents)))
+	mux.Handle("GET /ops/events/stats", requireAgentKey(http.HandlerFunc(handleOpsEventStats)))
+	mux.Handle("GET /ops/nodes", requireAgentKey(http.HandlerFunc(handleOpsNodeList)))
 
 	// Global middleware: access log → security headers → body limit → routes
 	handler := accessLog(securityHeaders(maxBody(mux)))

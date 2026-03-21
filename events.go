@@ -22,6 +22,12 @@ func init() {
 	eventBroadcast.ch = make(chan struct{})
 }
 
+func eventSignal() <-chan struct{} {
+	eventBroadcast.mu.Lock()
+	defer eventBroadcast.mu.Unlock()
+	return eventBroadcast.ch
+}
+
 func notifySubscribers() {
 	eventBroadcast.mu.Lock()
 	close(eventBroadcast.ch)

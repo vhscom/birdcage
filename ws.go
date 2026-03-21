@@ -67,12 +67,16 @@ func (c *wsConn) safeWriteControl(messageType int, data []byte, deadline time.Ti
 	return c.Conn.WriteControl(messageType, data, deadline)
 }
 
-// All agents get mesh capabilities.
+// All agents get mesh + ops capabilities.
 var agentCapabilities = map[string]bool{
 	"wg_sync":            true,
 	"wg_status":          true,
 	"endpoint_discovery": true,
 	"key_rotate":         true,
+	"query_events":       true,
+	"query_sessions":     true,
+	"subscribe_events":   true,
+	"revoke_session":     true,
 }
 
 func handleAgentWS(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +95,9 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 
 	conn.SetReadLimit(1 << 20)
 	connID := randomHex(8)
+
+	subs := &subscriptions{active: make(map[string]chan struct{})}
+	defer subs.stopAll()
 
 	emitEvent("ws.connect", clientIP(r), 0, r.UserAgent(), 101, map[string]any{
 		"connectionId": connID, "agent": cred.Name,
@@ -114,7 +121,7 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 				unregisterNode(nodeID)
 				cleanupRelayBindings(nodeID)
 			}()
-			go notifyNodeSync()
+			notifyNodeSync()
 		}
 	}
 
@@ -154,7 +161,7 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		handleAgentMessage(conn, cred, granted, raw, connID, nodeID)
+		handleAgentMessage(conn, cred, granted, raw, connID, nodeID, subs)
 	}
 
 	closeDone()
@@ -247,7 +254,7 @@ func heartbeatLoop(conn *wsConn, cred *AgentCredential, connID string, done chan
 	}
 }
 
-func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]bool, raw []byte, connID string, nodeID int) {
+func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]bool, raw []byte, connID string, nodeID int, subs *subscriptions) {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
@@ -310,6 +317,37 @@ func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]
 			return
 		}
 		handleRelayUnbind(nodeID, msg.Payload)
+
+	case "query_events":
+		if !granted["query_events"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSQueryEvents(conn, msg.ID, msg.Payload)
+
+	case "query_sessions":
+		if !granted["query_sessions"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSQuerySessions(conn, msg.ID, msg.Payload)
+
+	case "revoke_session":
+		if !granted["revoke_session"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSRevokeSession(conn, msg.ID, msg.Payload, cred, connID)
+
+	case "subscribe_events":
+		if !granted["subscribe_events"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSSubscribeEvents(conn, msg.ID, msg.Payload, subs)
+
+	case "unsubscribe_events":
+		handleWSUnsubscribeEvents(conn, msg.ID, subs)
 
 	default:
 		sendWSError(conn, msg.ID, "UNKNOWN_TYPE", "Unknown message type: "+msg.Type)

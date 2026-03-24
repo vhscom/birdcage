@@ -195,8 +195,8 @@ func runServe() {
 		proxy.ServeHTTP(w, r)
 	})))
 
-	// Global middleware: access log → security headers → body limit → routes
-	handler := accessLog(securityHeaders(maxBody(mux)))
+	// Global middleware: scan guard → access log → security headers → body limit → routes
+	handler := scanGuard(accessLog(securityHeaders(maxBody(mux))))
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

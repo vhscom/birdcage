@@ -141,6 +141,93 @@ func requireAgentKey(next http.Handler) http.Handler {
 	})
 }
 
+// --- Scan detection (ban IPs that generate excessive 404s) ---
+
+const (
+	scanWindow    = 1 * time.Minute
+	scanThreshold = 5
+	scanBanDur    = 5 * time.Minute
+	maxScanKeys   = 10_000
+)
+
+var scanner = struct {
+	mu      sync.Mutex
+	hits    map[string]*window
+	banned  map[string]time.Time
+}{
+	hits:   make(map[string]*window),
+	banned: make(map[string]time.Time),
+}
+
+func init() {
+	go func() {
+		for range time.Tick(1 * time.Minute) {
+			scanner.mu.Lock()
+			now := timeNow()
+			for k, w := range scanner.hits {
+				if now.After(w.resetAt) {
+					delete(scanner.hits, k)
+				}
+			}
+			for k, exp := range scanner.banned {
+				if now.After(exp) {
+					delete(scanner.banned, k)
+				}
+			}
+			scanner.mu.Unlock()
+		}
+	}()
+}
+
+func scanGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIP(r)
+
+		scanner.mu.Lock()
+		if exp, ok := scanner.banned[ip]; ok && timeNow().Before(exp) {
+			scanner.mu.Unlock()
+			// Silent drop — no response body, no headers
+			hj, ok := w.(http.Hijacker)
+			if ok {
+				conn, _, err := hj.Hijack()
+				if err == nil {
+					conn.Close()
+					return
+				}
+			}
+			// Fallback if hijack unavailable
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		scanner.mu.Unlock()
+
+		rec := &statusRecorder{ResponseWriter: w, status: 200}
+		next.ServeHTTP(rec, r)
+
+		if rec.status == 404 {
+			scanner.mu.Lock()
+			now := timeNow()
+			hit, ok := scanner.hits[ip]
+			if !ok || now.After(hit.resetAt) {
+				if !ok && len(scanner.hits) >= maxScanKeys {
+					scanner.mu.Unlock()
+					return
+				}
+				hit = &window{count: 0, resetAt: now.Add(scanWindow)}
+				scanner.hits[ip] = hit
+			}
+			hit.count++
+			if hit.count >= scanThreshold {
+				scanner.banned[ip] = now.Add(scanBanDur)
+				delete(scanner.hits, ip)
+				slog.Warn("scan detected, IP banned", "ip", ip, "duration", scanBanDur)
+				emitEvent("scan.banned", ip, 0, r.UserAgent(), 403, nil)
+			}
+			scanner.mu.Unlock()
+		}
+	})
+}
+
 // --- Access logging ---
 
 type statusRecorder struct {

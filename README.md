@@ -13,7 +13,9 @@ Browser ──────► Birdcage (VPS) ────► OpenClaw (home)
 
 A claw is a local AI assistant like [OpenClaw](https://github.com/openclaw/openclaw) running on your home machine. Birdcage lets you reach it from anywhere after authenticating. Traffic is encrypted over WireGuard — your claw never touches the public internet.
 
-<video src="docs/demo.mp4" width="720" autoplay loop muted playsinline></video>
+![Screenshot](docs/screenshot.png)
+
+See the [demo video](docs/demo.mp4) for a walkthrough.
 
 ## Quick start
 
@@ -65,9 +67,13 @@ Open `https://your-domain.example.com` in a browser and register with the token 
 
 **Auth layer** — Token-gated registration (single owner), login with PBKDF2-SHA384 (210K iterations), adaptive proof-of-work on brute force, JWT dual-token pattern with refresh token rotation and reuse detection, session management with sliding expiry, OWASP security headers.
 
-**Control proxy** — HTTP reverse proxy and WebSocket bridge to the claw's web UI. Strips credentials before forwarding, injects gateway token into WebSocket connect frames.
+**Control proxy** — HTTP reverse proxy and WebSocket bridge to the claw's web UI. Strips credentials before forwarding, injects gateway token and operator scopes into WebSocket connect frames.
 
 **WireGuard mesh** — Server provisions its own WireGuard interface and coordinates peers. Agent runs at home alongside the claw, manages WireGuard, discovers endpoints via STUN, falls back to relay when direct UDP fails, rotates keys on a configurable interval.
+
+**Ops API + TUI** — REST endpoints and an interactive terminal dashboard (`birdcage ctl`) for managing sessions, events, agent credentials, and mesh nodes. See [ops documentation](docs/ops.md).
+
+**Scan detection** — Automatically bans IPs that generate excessive 404s, reducing intelligence leakage to vulnerability scanners.
 
 ## CLI
 
@@ -80,6 +86,7 @@ birdcage agent                         Run the WireGuard mesh agent
 birdcage agent init <server> <key>     Save agent config
 birdcage agent install                 Install as system service
 birdcage agent uninstall               Remove system service
+birdcage ctl                           Open the management TUI
 ```
 
 ## Building
@@ -115,10 +122,11 @@ For local development, use `BASE_URL=http://localhost:8080` (the default).
 - **Privacy by architecture.** Oauth-free. Traffic between the VPS and your home machine is encrypted via WireGuard.
 - **One binary.** Server, agent, CLI — same executable, different subcommands.
 - **No magic.** `birdcage init` shows you what it creates. `birdcage serve` does what it says. One `.env`, one database.
-- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under attack.
+- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under attack. Scanners get silently banned.
 
 ## Documentation
 
+- [Ops API and TUI](docs/ops.md) — REST endpoints, WebSocket ops, management TUI
 - [Auth flows](docs/flows.md) — sequence diagrams for every authentication path
 - [Threat model](docs/threat-model.md) — STRIDE analysis and JWT pitfall catalogue
 

@@ -193,6 +193,9 @@ func injectToken(raw []byte, token string) []byte {
 		slog.Warn("bridge connect frame already contains auth field, overwriting")
 	}
 	params["auth"] = map[string]string{"token": token}
+	if params["scopes"] == nil {
+		params["scopes"] = []string{"operator.admin"}
+	}
 	out, err := json.Marshal(f)
 	if err != nil {
 		return raw

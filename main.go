@@ -158,6 +158,13 @@ func runServe() {
 		w.Write(page)
 	})
 
+	faviconData, _ := publicFS.ReadFile("public/favicon.ico")
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/x-icon")
+		w.Header().Set("Cache-Control", "public, max-age=604800")
+		w.Write(faviconData)
+	})
+
 	// --- Public ---
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /auth/status", handleAuthStatus)

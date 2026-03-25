@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"embed"
 	"fmt"
 	"log/slog"
@@ -260,10 +261,20 @@ func serveTLS(ctx context.Context, handler http.Handler) {
 		HostPolicy: autocert.HostWhitelist(host),
 	}
 
+	tlsCfg := m.TLSConfig()
+	inner := tlsCfg.GetCertificate
+	tlsCfg.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		if hello.ServerName == "" || net.ParseIP(hello.ServerName) != nil {
+			slog.Warn("tls rejected", "reason", "missing or IP-based SNI", "ip", hello.Conn.RemoteAddr().String(), "sni", hello.ServerName)
+			return nil, fmt.Errorf("rejected: no SNI or bare IP")
+		}
+		return inner(hello)
+	}
+
 	tlsSrv := &http.Server{
 		Addr:               cfg.Addr,
 		Handler:            handler,
-		TLSConfig:          m.TLSConfig(),
+		TLSConfig:          tlsCfg,
 		ReadHeaderTimeout:  10 * time.Second,
 	}
 

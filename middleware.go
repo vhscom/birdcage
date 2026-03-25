@@ -186,6 +186,7 @@ func scanGuard(next http.Handler) http.Handler {
 		scanner.mu.Lock()
 		if exp, ok := scanner.banned[ip]; ok && timeNow().Before(exp) {
 			scanner.mu.Unlock()
+			slog.Warn("banned IP dropped", "ip", ip, "path", r.URL.Path, "remaining", time.Until(exp).Round(time.Second))
 			// Silent drop — no response body, no headers
 			hj, ok := w.(http.Hijacker)
 			if ok {
@@ -220,8 +221,8 @@ func scanGuard(next http.Handler) http.Handler {
 			if hit.count >= scanThreshold {
 				scanner.banned[ip] = now.Add(scanBanDur)
 				delete(scanner.hits, ip)
-				slog.Warn("scan detected, IP banned", "ip", ip, "duration", scanBanDur)
-				emitEvent("scan.banned", ip, 0, r.UserAgent(), 403, nil)
+				slog.Warn("scan detected, IP banned", "ip", ip, "path", r.URL.Path, "ua", r.UserAgent(), "duration", scanBanDur)
+				emitEvent("scan.banned", ip, 0, r.UserAgent(), 403, map[string]any{"path": r.URL.Path})
 			}
 			scanner.mu.Unlock()
 		}

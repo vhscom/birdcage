@@ -352,34 +352,36 @@ func printUsage() {
 	fmt.Println(heading("Usage"))
 	fmt.Printf("  %s\n\n", cmd("birdcage ctl [flags]"))
 
+	w := "%-34s" // column width for all sections
+
 	fmt.Println(heading("Flags"))
-	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-20s", "--addr <url>")), dim("Ops endpoint (overrides BIRDCAGE_CTL_ADDR)"))
-	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf("%-20s", "--help")), dim("Show this help"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf(w, "--addr <url>")), dim("Ops endpoint (overrides BIRDCAGE_CTL_ADDR)"))
+	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf(w, "--help")), dim("Show this help"))
 
 	fmt.Println(heading("Environment"))
-	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-28s", "BIRDCAGE_CTL_ADDR")), dim("Ops endpoint URL (required)"))
-	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf("%-28s", "BIRDCAGE_CTL_API_KEY")), dim("Agent API key for Bearer auth (required)"))
-	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf("%-28s", "BIRDCAGE_CTL_PROVISIONING_SECRET")), dim("Provisioning secret (optional)"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf(w, "BIRDCAGE_CTL_ADDR")), dim("Ops endpoint URL (required)"))
+	fmt.Printf("  %s  %s\n", flag(fmt.Sprintf(w, "BIRDCAGE_CTL_API_KEY")), dim("Agent API key for Bearer auth (required)"))
+	fmt.Printf("  %s  %s\n\n", flag(fmt.Sprintf(w, "BIRDCAGE_CTL_PROVISIONING_SECRET")), dim("Provisioning secret (optional)"))
 
 	fmt.Println(heading("Interactive Commands"))
 	fmt.Println()
 	fmt.Printf("  %s\n", title("Sessions"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View active sessions")), dim("List all active sessions"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Revoke all sessions")), dim("Expire every active session"))
-	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "Revoke specific session")), dim("Expire by session ID"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "View active sessions")), dim("List all active sessions"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Revoke all sessions")), dim("Expire every active session"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf(w, "Revoke specific session")), dim("Expire by session ID"))
 
 	fmt.Printf("  %s\n", title("Events"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View recent events")), dim("Security events (last 24h)"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "View event stats")), dim("Aggregate counts by type"))
-	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "Tail events (live)")), dim("Stream in real time"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "View recent events")), dim("Security events (last 24h)"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "View event stats")), dim("Aggregate counts by type"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf(w, "Tail events (live)")), dim("Stream in real time"))
 
 	fmt.Printf("  %s\n", title("Nodes"))
-	fmt.Printf("    %s  %s\n\n", cmd(fmt.Sprintf("%-32s", "View all nodes")), dim("List all mesh nodes"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf(w, "View all nodes")), dim("List all mesh nodes"))
 
 	fmt.Printf("  %s\n", title("Agents"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "List agents")), dim("Show agent credentials"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Provision agent")), dim("Create a new credential"))
-	fmt.Printf("    %s  %s\n", cmd(fmt.Sprintf("%-32s", "Revoke agent")), dim("Revoke a credential"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "List agents")), dim("Show agent credentials"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Provision agent")), dim("Create a new credential"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Revoke agent")), dim("Revoke a credential"))
 }
 
 // Run is the entry point for "birdcage ctl".

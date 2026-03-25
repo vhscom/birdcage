@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 	"golang.org/x/crypto/acme/autocert"
 
@@ -99,27 +100,32 @@ func main() {
 }
 
 func printHelp() {
-	fmt.Println("birdcage — secure remote access for personal AI")
-	fmt.Println()
-	fmt.Println("Usage")
-	fmt.Println("  birdcage <command> [flags]")
-	fmt.Println()
-	fmt.Println("Server")
-	fmt.Printf("  %-30s %s\n", "init", "Generate server config (.env)")
-	fmt.Printf("  %-30s %s\n", "serve", "Start the birdcage server")
-	fmt.Printf("  %-30s %s\n", "serve install", "Install as system service")
-	fmt.Printf("  %-30s %s\n", "serve uninstall", "Remove system service")
-	fmt.Println()
-	fmt.Println("Agent")
-	fmt.Printf("  %-30s %s\n", "agent", "Run the WireGuard mesh agent")
-	fmt.Printf("  %-30s %s\n", "agent init <server> <key>", "Save agent config")
-	fmt.Printf("  %-30s %s\n", "agent install", "Install as system service")
-	fmt.Printf("  %-30s %s\n", "agent uninstall", "Remove system service")
-	fmt.Println()
-	fmt.Println("Management")
-	fmt.Printf("  %-30s %s\n", "ctl", "Open the management TUI")
-	fmt.Println()
-	fmt.Println("  Run 'birdcage <command> --help' for command-specific help.")
+	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5")).Render
+	heading := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6")).Render
+	cmd := lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render
+	dim := lipgloss.NewStyle().Faint(true).Render
+
+	fmt.Printf("%s %s\n\n", title("birdcage"), dim("— secure remote access for personal AI"))
+
+	fmt.Println(heading("Usage"))
+	fmt.Printf("  %s\n\n", cmd("birdcage <command> [flags]"))
+
+	fmt.Println(heading("Server"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "init")), dim("Generate server config (.env)"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "serve")), dim("Start the birdcage server"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "serve install")), dim("Install as system service"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf("%-28s", "serve uninstall")), dim("Remove system service"))
+
+	fmt.Println(heading("Agent"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "agent")), dim("Run the WireGuard mesh agent"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "agent init <server> <key>")), dim("Save agent config"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf("%-28s", "agent install")), dim("Install as system service"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf("%-28s", "agent uninstall")), dim("Remove system service"))
+
+	fmt.Println(heading("Management"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf("%-28s", "ctl")), dim("Open the management TUI"))
+
+	fmt.Printf("  %s\n", dim("Run 'birdcage <command> --help' for command-specific help."))
 }
 
 func runServe() {

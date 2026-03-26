@@ -202,31 +202,33 @@ func scanGuard(next http.Handler) http.Handler {
 		}
 		scanner.mu.Unlock()
 
-		rec := &statusRecorder{ResponseWriter: w, status: 200}
-		next.ServeHTTP(rec, r)
-
-		if rec.status == 404 {
-			scanner.mu.Lock()
-			now := timeNow()
-			hit, ok := scanner.hits[ip]
-			if !ok || now.After(hit.resetAt) {
-				if !ok && len(scanner.hits) >= maxScanKeys {
-					scanner.mu.Unlock()
-					return
-				}
-				hit = &window{count: 0, resetAt: now.Add(scanWindow)}
-				scanner.hits[ip] = hit
-			}
-			hit.count++
-			if hit.count >= scanThreshold {
-				scanner.banned[ip] = now.Add(scanBanDur)
-				delete(scanner.hits, ip)
-				slog.Warn("scan detected, IP banned", "ip", ip, "path", r.URL.Path, "ua", r.UserAgent(), "duration", scanBanDur)
-				emitEvent("scan.banned", ip, 0, r.UserAgent(), 403, map[string]any{"path": r.URL.Path})
-			}
-			scanner.mu.Unlock()
-		}
+		next.ServeHTTP(w, r)
 	})
+}
+
+func scanNotFound(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	scanner.mu.Lock()
+	now := timeNow()
+	hit, ok := scanner.hits[ip]
+	if !ok || now.After(hit.resetAt) {
+		if !ok && len(scanner.hits) >= maxScanKeys {
+			scanner.mu.Unlock()
+			http.NotFound(w, r)
+			return
+		}
+		hit = &window{count: 0, resetAt: now.Add(scanWindow)}
+		scanner.hits[ip] = hit
+	}
+	hit.count++
+	if hit.count >= scanThreshold {
+		scanner.banned[ip] = now.Add(scanBanDur)
+		delete(scanner.hits, ip)
+		slog.Warn("scan detected, IP banned", "ip", ip, "path", r.URL.Path, "ua", r.UserAgent(), "duration", scanBanDur)
+		emitEvent("scan.banned", ip, 0, r.UserAgent(), 403, map[string]any{"path": r.URL.Path})
+	}
+	scanner.mu.Unlock()
+	http.NotFound(w, r)
 }
 
 // --- Access logging ---

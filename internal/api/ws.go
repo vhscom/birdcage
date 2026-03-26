@@ -16,7 +16,7 @@ func (c *Client) ConnectWS(ctx context.Context) (*websocket.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	wsURL += "/ops/ws"
+	wsURL += "/ws"
 
 	conn, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{
 		HTTPHeader: http.Header{

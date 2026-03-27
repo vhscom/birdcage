@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 // --- Setup helpers ---
@@ -62,26 +64,22 @@ func setupWSServer(t *testing.T) (*httptest.Server, string) {
 func dialWS(t *testing.T, serverURL, apiKey string) *websocket.Conn {
 	t.Helper()
 	wsURL := "ws" + strings.TrimPrefix(serverURL, "http") + "/ws"
-	header := http.Header{}
-	header.Set("Authorization", "Bearer "+apiKey)
 
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, header)
+	conn, _, err := websocket.Dial(t.Context(), wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Authorization": []string{"Bearer " + apiKey},
+		},
+	})
 	if err != nil {
-		body := ""
-		if resp != nil {
-			b := make([]byte, 512)
-			n, _ := resp.Body.Read(b)
-			body = string(b[:n])
-		}
-		t.Fatalf("dial ws: %v (response body: %s)", err, body)
+		t.Fatalf("dial ws: %v", err)
 	}
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { conn.CloseNow() })
 	return conn
 }
 
 func negotiateTestCaps(t *testing.T, conn *websocket.Conn, caps []string) map[string]any {
 	t.Helper()
-	wsSend(conn, map[string]any{
+	wsSend(t, conn, map[string]any{
 		"type":         "capability.request",
 		"capabilities": caps,
 	})
@@ -92,15 +90,17 @@ func negotiateTestCaps(t *testing.T, conn *websocket.Conn, caps []string) map[st
 	return resp
 }
 
-func wsSend(conn *websocket.Conn, v any) {
+func wsSend(t *testing.T, conn *websocket.Conn, v any) {
+	t.Helper()
 	b, _ := json.Marshal(v)
-	conn.WriteMessage(websocket.TextMessage, b)
+	conn.Write(t.Context(), websocket.MessageText, b)
 }
 
 func wsRead(t *testing.T, conn *websocket.Conn) map[string]any {
 	t.Helper()
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	_, raw, err := conn.ReadMessage()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, raw, err := conn.Read(ctx)
 	if err != nil {
 		t.Fatalf("wsRead: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestAgentWSPing(t *testing.T) {
 	conn := dialWS(t, srv.URL, apiKey)
 	negotiateTestCaps(t, conn, []string{"wg_sync", "wg_status"})
 
-	wsSend(conn, map[string]any{"type": "ping", "id": "1"})
+	wsSend(t, conn, map[string]any{"type": "ping", "id": "1"})
 
 	resp := wsReadSkipSync(t, conn)
 	if resp["type"] != "pong" {
@@ -178,19 +178,113 @@ func TestAgentWSHandshakeTimeout(t *testing.T) {
 	conn := dialWS(t, srv.URL, apiKey)
 
 	// Don't send capability.request — server should close with 4001
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	_, _, err := conn.ReadMessage()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	_, _, err := conn.Read(ctx)
 	if err == nil {
 		t.Fatal("expected close error, got nil")
 	}
 
-	closeErr, ok := err.(*websocket.CloseError)
-	if !ok {
-		t.Fatalf("expected *websocket.CloseError, got %T: %v", err, err)
+	var closeErr websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		t.Fatalf("expected websocket.CloseError, got %T: %v", err, err)
 	}
-	if closeErr.Code != wsHandshakeTimeout {
+	if closeErr.Code != websocket.StatusCode(wsHandshakeTimeout) {
 		t.Errorf("close code = %d, want %d (wsHandshakeTimeout)", closeErr.Code, wsHandshakeTimeout)
 	}
+}
+
+func TestAgentWSRateLimit(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	conn := dialWS(t, srv.URL, apiKey)
+	// Avoid wg_sync/wg_status to prevent wg.sync messages arriving between sends.
+	negotiateTestCaps(t, conn, []string{"query_events"})
+
+	// Send one more than the per-window max; server should close with 4008.
+	msg := map[string]any{"type": "wg.sync.result", "payload": map[string]any{"success": true}}
+	for i := 0; i <= wsMsgRateMax; i++ {
+		wsSend(t, conn, msg)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, _, err := conn.Read(ctx)
+	if err == nil {
+		t.Fatal("expected close error after rate limit, got nil")
+	}
+	var closeErr websocket.CloseError
+	if !errors.As(err, &closeErr) {
+		t.Fatalf("expected websocket.CloseError, got %T: %v", err, err)
+	}
+	if closeErr.Code != websocket.StatusCode(wsRateLimited) {
+		t.Errorf("close code = %d, want %d (wsRateLimited)", closeErr.Code, wsRateLimited)
+	}
+}
+
+// --- Origin tests ---
+
+func TestCheckWSOrigin(t *testing.T) {
+	cases := []struct {
+		name    string
+		origin  string
+		allowed string
+		want    bool
+	}{
+		{"no origin header", "", "", true},
+		{"no origin, allowlist set", "", "https://app.example.com", true},
+		{"origin, empty allowlist", "https://evil.com", "", false},
+		{"origin matches allowlist", "https://app.example.com", "https://app.example.com", true},
+		{"origin not in allowlist", "https://evil.com", "https://app.example.com", false},
+		{"origin matches one of multiple", "https://b.com", "https://a.com, https://b.com", true},
+		{"origin matches none of multiple", "https://evil.com", "https://a.com, https://b.com", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg = &Config{WSAllowedOrigins: tc.allowed}
+			r, _ := http.NewRequest("GET", "/ws", nil)
+			if tc.origin != "" {
+				r.Header.Set("Origin", tc.origin)
+			}
+			if got := checkWSOrigin(r); got != tc.want {
+				t.Errorf("checkWSOrigin() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAgentWSOriginBlocked(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	// WSAllowedOrigins is "" — any Origin header must be rejected before upgrade
+
+	req, _ := http.NewRequest("GET", srv.URL+"/ws", nil)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Origin", "https://evil.example.com")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", resp.StatusCode)
+	}
+}
+
+func TestAgentWSOriginAllowed(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	cfg.WSAllowedOrigins = "https://app.example.com"
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/ws"
+	conn, _, err := websocket.Dial(t.Context(), wsURL, &websocket.DialOptions{
+		HTTPHeader: http.Header{
+			"Authorization": []string{"Bearer " + apiKey},
+			"Origin":        []string{"https://app.example.com"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("dial with allowed origin: %v", err)
+	}
+	defer conn.CloseNow()
+	negotiateTestCaps(t, conn, []string{"wg_sync"})
 }
 
 func TestAgentWSUnknownType(t *testing.T) {
@@ -198,7 +292,7 @@ func TestAgentWSUnknownType(t *testing.T) {
 	conn := dialWS(t, srv.URL, apiKey)
 	negotiateTestCaps(t, conn, []string{"wg_sync", "wg_status"})
 
-	wsSend(conn, map[string]any{"type": "bogus"})
+	wsSend(t, conn, map[string]any{"type": "bogus"})
 
 	resp := wsReadSkipSync(t, conn)
 	if resp["type"] != "error" {

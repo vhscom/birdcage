@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -267,7 +267,7 @@ func notifyNodeSync() {
 		}
 		data, _ := json.Marshal(msg)
 		if target.conn != nil {
-			target.conn.safeWrite(websocket.TextMessage, data)
+			target.conn.safeWrite(websocket.MessageText, data)
 		}
 	}
 }

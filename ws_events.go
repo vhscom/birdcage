@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 // --- Event subscription polling ---
@@ -205,7 +205,7 @@ func handleWSSubscribeEvents(conn *wsConn, id string, payload json.RawMessage, s
 		ack["id"] = id
 	}
 	b, _ := json.Marshal(ack)
-	conn.safeWrite(websocket.TextMessage, b)
+	conn.safeWrite(websocket.MessageText, b)
 
 	stop := make(chan struct{})
 	subs.start("events", stop)
@@ -242,7 +242,7 @@ func handleWSSubscribeEvents(conn *wsConn, id string, payload json.RawMessage, s
 					"payload": e,
 				}
 				b, _ := json.Marshal(msg)
-				if err := conn.safeWrite(websocket.TextMessage, b); err != nil {
+				if err := conn.safeWrite(websocket.MessageText, b); err != nil {
 					return
 				}
 			}
@@ -253,7 +253,7 @@ func handleWSSubscribeEvents(conn *wsConn, id string, payload json.RawMessage, s
 					"payload": map[string]any{"queued": len(events)},
 				}
 				b, _ := json.Marshal(bp)
-				conn.safeWrite(websocket.TextMessage, b)
+				conn.safeWrite(websocket.MessageText, b)
 			}
 		}
 	}()

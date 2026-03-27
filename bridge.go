@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 const (
@@ -30,9 +31,6 @@ const (
 var (
 	activeBridge   *wsConn
 	activeBridgeMu sync.Mutex
-	bridgeUpgrader = websocket.Upgrader{
-		CheckOrigin: checkWSOrigin,
-	}
 )
 
 func newBridge() http.Handler {
@@ -42,11 +40,18 @@ func newBridge() http.Handler {
 			return
 		}
 
-		raw, err := bridgeUpgrader.Upgrade(w, r, nil)
+		if !checkWSOrigin(r) {
+			http.Error(w, "Origin not allowed", http.StatusForbidden)
+			return
+		}
+
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			InsecureSkipVerify: true,
+		})
 		if err != nil {
 			return
 		}
-		client := &wsConn{Conn: raw}
+		client := &wsConn{Conn: c, remoteAddr: r.RemoteAddr}
 		client.SetReadLimit(maxMessageSize)
 
 		claims := getClaims(r)
@@ -58,7 +63,7 @@ func newBridge() http.Handler {
 			if claims != nil {
 				emitEvent("bridge.superseded", clientIP(r), claims.UID, r.UserAgent(), 0, map[string]any{
 					"session_id":  claims.SID,
-					"previous_ip": prev.RemoteAddr().String(),
+					"previous_ip": prev.remoteAddr,
 				})
 			}
 		}
@@ -71,7 +76,7 @@ func newBridge() http.Handler {
 				activeBridge = nil
 			}
 			activeBridgeMu.Unlock()
-			client.Close()
+			client.CloseNow()
 		}()
 
 		// Dial backend (claw gateway)
@@ -80,14 +85,17 @@ func newBridge() http.Handler {
 		if o := r.Header.Get("Origin"); o != "" {
 			hdr.Set("Origin", o)
 		}
-		dialer := websocket.Dialer{HandshakeTimeout: dialTimeout}
-		backend, _, err := dialer.Dial(wsURL, hdr)
+		dialCtx, dialCancel := context.WithTimeout(r.Context(), dialTimeout)
+		defer dialCancel()
+		backend, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
+			HTTPHeader: hdr,
+		})
 		if err != nil {
 			logError("bridge.dial", err)
 			closeBridgeWS(client, codeBackendDown, "Backend unavailable")
 			return
 		}
-		defer backend.Close()
+		defer backend.CloseNow()
 		backend.SetReadLimit(maxMessageSize)
 
 		done := make(chan struct{}, 3)
@@ -120,16 +128,13 @@ func newBridge() http.Handler {
 		go func() {
 			defer func() { done <- struct{}{} }()
 			for {
-				backend.SetReadDeadline(time.Now().Add(idleTimeout))
-				mt, msg, err := backend.ReadMessage()
+				readCtx, readCancel := context.WithTimeout(r.Context(), idleTimeout)
+				mt, msg, err := backend.Read(readCtx)
+				readCancel()
 				if err != nil {
 					return
 				}
-				client.wmu.Lock()
-				client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
-				werr := client.Conn.WriteMessage(mt, msg)
-				client.wmu.Unlock()
-				if werr != nil {
+				if err := client.safeWrite(mt, msg); err != nil {
 					return
 				}
 			}
@@ -141,12 +146,13 @@ func newBridge() http.Handler {
 			var count int
 			win := time.Now()
 			for {
-				client.SetReadDeadline(time.Now().Add(idleTimeout))
-				mt, msg, err := client.ReadMessage()
+				readCtx, readCancel := context.WithTimeout(r.Context(), idleTimeout)
+				mt, msg, err := client.Read(readCtx)
+				readCancel()
 				if err != nil {
 					return
 				}
-				if mt == websocket.BinaryMessage {
+				if mt == websocket.MessageBinary {
 					closeBridgeWS(client, 1003, "Binary not supported")
 					return
 				}
@@ -160,11 +166,13 @@ func newBridge() http.Handler {
 					closeBridgeWS(client, codeRateLimited, "Rate limited")
 					return
 				}
-				if mt == websocket.TextMessage {
+				if mt == websocket.MessageText {
 					msg = injectToken(msg, cfg.GatewayToken)
 				}
-				backend.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := backend.WriteMessage(mt, msg); err != nil {
+				wctx, wcancel := context.WithTimeout(r.Context(), writeWait)
+				werr := backend.Write(wctx, mt, msg)
+				wcancel()
+				if werr != nil {
 					return
 				}
 			}
@@ -208,7 +216,5 @@ func toWS(u string) string {
 }
 
 func closeBridgeWS(c *wsConn, code int, reason string) {
-	msg := websocket.FormatCloseMessage(code, reason)
-	c.safeWriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
-	c.Close()
+	c.Close(websocket.StatusCode(code), reason)
 }

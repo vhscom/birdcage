@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -8,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 // Agent WebSocket close codes
@@ -27,6 +28,7 @@ const (
 	wsPingDeadline      = 90 * time.Second
 	wsMsgRateWindow     = 60 * time.Second
 	wsMsgRateMax        = 60
+	wsWriteTimeout      = 10 * time.Second
 )
 
 func checkWSOrigin(r *http.Request) bool {
@@ -45,26 +47,16 @@ func checkWSOrigin(r *http.Request) bool {
 	return false
 }
 
-var wsUpgrader = websocket.Upgrader{
-	CheckOrigin: checkWSOrigin,
-}
-
-// wsConn wraps a websocket.Conn with a mutex for safe concurrent writes.
+// wsConn wraps a websocket.Conn, caching the remote address for later use.
 type wsConn struct {
 	*websocket.Conn
-	wmu sync.Mutex
+	remoteAddr string
 }
 
-func (c *wsConn) safeWrite(messageType int, data []byte) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.Conn.WriteMessage(messageType, data)
-}
-
-func (c *wsConn) safeWriteControl(messageType int, data []byte, deadline time.Time) error {
-	c.wmu.Lock()
-	defer c.wmu.Unlock()
-	return c.Conn.WriteControl(messageType, data, deadline)
+func (c *wsConn) safeWrite(mt websocket.MessageType, data []byte) error {
+	ctx, cancel := context.WithTimeout(context.Background(), wsWriteTimeout)
+	defer cancel()
+	return c.Conn.Write(ctx, mt, data)
 }
 
 // All agents get mesh + ops capabilities.
@@ -86,12 +78,19 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	raw, err := wsUpgrader.Upgrade(w, r, nil)
+	if !checkWSOrigin(r) {
+		http.Error(w, "Origin not allowed", http.StatusForbidden)
+		return
+	}
+
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		InsecureSkipVerify: true,
+	})
 	if err != nil {
 		return
 	}
-	conn := &wsConn{Conn: raw}
-	defer conn.Close()
+	conn := &wsConn{Conn: c, remoteAddr: r.RemoteAddr}
+	defer conn.CloseNow()
 
 	conn.SetReadLimit(1 << 20)
 	connID := randomHex(8)
@@ -104,7 +103,7 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Capability negotiation
-	granted := negotiateCapabilities(conn, cred, connID)
+	granted := negotiateCapabilities(r.Context(), conn, cred, connID)
 	if granted == nil {
 		return
 	}
@@ -137,15 +136,16 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	windowStart := time.Now()
 
 	for {
-		conn.SetReadDeadline(time.Now().Add(wsPingDeadline))
-		messageType, raw, err := conn.ReadMessage()
+		readCtx, readCancel := context.WithTimeout(r.Context(), wsPingDeadline)
+		mt, data, err := conn.Read(readCtx)
+		readCancel()
 		if err != nil {
 			break
 		}
 
-		if messageType == websocket.BinaryMessage {
+		if mt == websocket.MessageBinary {
 			if nodeID > 0 {
-				handleRelayPacket(nodeID, raw)
+				handleRelayPacket(nodeID, data)
 			}
 			continue
 		}
@@ -161,7 +161,7 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		handleAgentMessage(conn, cred, granted, raw, connID, nodeID, subs)
+		handleAgentMessage(conn, cred, granted, data, connID, nodeID, subs)
 	}
 
 	closeDone()
@@ -170,10 +170,29 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func negotiateCapabilities(conn *wsConn, cred *AgentCredential, connID string) map[string]bool {
-	conn.SetReadDeadline(time.Now().Add(wsHandshakeDeadline))
-	_, raw, err := conn.ReadMessage()
-	if err != nil {
+func negotiateCapabilities(ctx context.Context, conn *wsConn, cred *AgentCredential, connID string) map[string]bool {
+	// Run the read in a goroutine so the handshake deadline can close cleanly.
+	// coder/websocket closes the connection when a Read context is cancelled,
+	// which would prevent sending the 4001 close frame afterward.
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	ch := make(chan readResult, 1)
+	go func() {
+		_, data, err := conn.Read(ctx)
+		ch <- readResult{data, err}
+	}()
+
+	var data []byte
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			closeWSAgent(conn, wsHandshakeTimeout, "Handshake timeout")
+			return nil
+		}
+		data = res.data
+	case <-time.After(wsHandshakeDeadline):
 		closeWSAgent(conn, wsHandshakeTimeout, "Handshake timeout")
 		return nil
 	}
@@ -182,7 +201,7 @@ func negotiateCapabilities(conn *wsConn, cred *AgentCredential, connID string) m
 		Type         string   `json:"type"`
 		Capabilities []string `json:"capabilities"`
 	}
-	if json.Unmarshal(raw, &msg) != nil || msg.Type != "capability.request" {
+	if json.Unmarshal(data, &msg) != nil || msg.Type != "capability.request" {
 		closeWSAgent(conn, wsProtocolError, "Expected capability.request")
 		return nil
 	}
@@ -211,7 +230,7 @@ func negotiateCapabilities(conn *wsConn, cred *AgentCredential, connID string) m
 		"denied":        denied,
 	}
 	b, _ := json.Marshal(resp)
-	conn.safeWrite(websocket.TextMessage, b)
+	conn.safeWrite(websocket.MessageText, b)
 
 	emitEvent("ws.capability_granted", "", 0, "", 200, map[string]any{
 		"connectionId": connID, "agent": cred.Name,
@@ -249,18 +268,18 @@ func heartbeatLoop(conn *wsConn, cred *AgentCredential, connID string, done chan
 				"ping_timeout_ms": wsPingDeadline.Milliseconds(),
 			}
 			b, _ := json.Marshal(hb)
-			conn.safeWrite(websocket.TextMessage, b)
+			conn.safeWrite(websocket.MessageText, b)
 		}
 	}
 }
 
-func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]bool, raw []byte, connID string, nodeID int, subs *subscriptions) {
+func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]bool, data []byte, connID string, nodeID int, subs *subscriptions) {
 	var msg struct {
 		Type    string          `json:"type"`
 		ID      string          `json:"id"`
 		Payload json.RawMessage `json:"payload"`
 	}
-	if json.Unmarshal(raw, &msg) != nil {
+	if json.Unmarshal(data, &msg) != nil {
 		sendWSError(conn, "", "PARSE_ERROR", "Invalid JSON")
 		return
 	}
@@ -272,7 +291,7 @@ func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]
 			resp["id"] = msg.ID
 		}
 		b, _ := json.Marshal(resp)
-		conn.safeWrite(websocket.TextMessage, b)
+		conn.safeWrite(websocket.MessageText, b)
 
 	case "wg.status":
 		if !granted["wg_status"] {
@@ -467,7 +486,7 @@ func sendWSResult(conn *wsConn, id, typ string, payload any) {
 		msg["id"] = id
 	}
 	b, _ := json.Marshal(msg)
-	conn.safeWrite(websocket.TextMessage, b)
+	conn.safeWrite(websocket.MessageText, b)
 }
 
 func sendWSError(conn *wsConn, id, code, message string) {
@@ -476,11 +495,9 @@ func sendWSError(conn *wsConn, id, code, message string) {
 		msg["id"] = id
 	}
 	b, _ := json.Marshal(msg)
-	conn.safeWrite(websocket.TextMessage, b)
+	conn.safeWrite(websocket.MessageText, b)
 }
 
 func closeWSAgent(conn *wsConn, code int, reason string) {
-	msg := websocket.FormatCloseMessage(code, reason)
-	conn.safeWriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
-	conn.Close()
+	conn.Close(websocket.StatusCode(code), reason)
 }

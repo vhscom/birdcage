@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 const (
@@ -141,5 +141,5 @@ func handleRelayPacket(sourceNodeID int, raw []byte) {
 	binary.BigEndian.PutUint32(header, uint32(sourceNodeID)) // #nosec G115 — node IDs are small positive integers from SQLite autoincrement
 	packet := append(header, raw[4:]...)
 
-	destNode.conn.safeWrite(websocket.BinaryMessage, packet)
+	destNode.conn.safeWrite(websocket.MessageBinary, packet)
 }

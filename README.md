@@ -73,8 +73,6 @@ Open `https://your-domain.example.com` in a browser and register with the token 
 
 **Ops API + TUI** — REST endpoints and an interactive terminal dashboard (`birdcage ctl`) for managing sessions, events, agent credentials, and mesh nodes. See [ops documentation](docs/ops.md).
 
-**Scan detection** — Automatically bans IPs that generate excessive 404s, reducing intelligence leakage to vulnerability scanners.
-
 ## CLI
 
 ```
@@ -122,7 +120,7 @@ For local development, use `BASE_URL=http://localhost:8080` (the default).
 - **Privacy by architecture.** Oauth-free. Traffic between the VPS and your home machine is encrypted via WireGuard.
 - **One binary.** Server, agent, CLI — same executable, different subcommands.
 - **No magic.** `birdcage init` shows you what it creates. `birdcage serve` does what it says. One `.env`, one database.
-- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under attack. Scanners get silently banned.
+- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under attack.
 
 ## Documentation
 

@@ -54,27 +54,28 @@ STRIDE analysis for Birdcage. This document maps each threat to the specific mit
 | 30 | **Information Disclosure** | Response header leakage from gateway | `proxy.go:57-62` | `ModifyResponse` strips `Set-Cookie`, `Server`, `X-Powered-By` from gateway responses | None — sensitive headers removed |
 | 31 | **Denial of Service** | WebSocket bridge flooding | `bridge.go:149-162` | Rate limit: 100 messages per 1-second sliding window; binary messages rejected with close code 1003 | None — both text and binary abuse paths covered |
 | 32 | **Denial of Service** | Bridge session persistence after revocation | `bridge.go:96-116` | Heartbeat timer checks session validity in DB every 25 seconds; revoked sessions receive close code 4010 | Up to 25-second window between revocation and forced disconnect |
+| 33 | **Tampering** | Indirect prompt injection via WebSocket bridge | `bridge.go` | CSP nonce blocks direct script execution from injected content | Gateway frames forwarded unmodified — AI tooling consuming bridge output may act on embedded instructions; `style-src 'unsafe-inline'` is residual XSS surface |
 
 ### Agent WebSocket Surface
 
 | # | Category | Threat | Component | Mitigation | Residual Risk |
 |---|----------|--------|-----------|------------|---------------|
-| 33 | **Spoofing** | Agent key compromise | `middleware.go:119-142` | Keys are 256-bit random, SHA-256 hashed before storage, looked up via parameterized query; `revoked_at IS NULL` filter rejects revoked keys; auth failures emit `agent.auth_failure` events | Keys are long-lived — exposure window is unbounded until explicit revocation |
-| 34 | **Spoofing** | Browser-initiated WebSocket CSRF | `ws.go:32-46` | Origin validation rejects connections with an `Origin` header unless it matches the `WS_ALLOWED_ORIGINS` allowlist (empty by default — all browser origins rejected) | Non-browser clients that omit `Origin` are allowed through (by design — agent clients) |
-| 35 | **Spoofing** | Revoked agent persists on open WebSocket | `ws.go:216-248` | Heartbeat timer re-validates agent credential against DB every 25 seconds; revoked agents receive close code `4010` | Up to 25-second window between revocation and forced disconnect |
-| 36 | **Tampering** | Capability escalation over WebSocket | `ws.go:166-214` | Capabilities are immutable after negotiation; each message checked against `granted` map before dispatch | None — capabilities fixed at connection time |
-| 37 | **Tampering** | WireGuard key injection via agent message | `ws.go:359-397`, `node.go:392-400` | `validWGPubkey()` validates key format before DB write; `serverUpdatePeer()` re-validates pubkey, endpoint, and allowed_ips before passing to `wg` CLI | None — defense-in-depth validation at both layers |
-| 38 | **Denial of Service** | Agent message flooding | `ws.go:128-155` | Per-connection rate limit: 60 messages per 60-second window; exceeding closes connection with code 4008 | None — rate limit enforced before message dispatch |
-| 39 | **Denial of Service** | Relay bandwidth abuse | `relay.go:109-117` | Byte-rate limit: 10 MB per 60-second window per source node; relay bindings require both nodes connected | None — bandwidth and binding constraints prevent amplification |
+| 34 | **Spoofing** | Agent key compromise | `middleware.go:119-142` | Keys are 256-bit random, SHA-256 hashed before storage, looked up via parameterized query; `revoked_at IS NULL` filter rejects revoked keys; auth failures emit `agent.auth_failure` events | Keys are long-lived — exposure window is unbounded until explicit revocation |
+| 35 | **Spoofing** | Browser-initiated WebSocket CSRF | `ws.go:32-46` | Origin validation rejects connections with an `Origin` header unless it matches the `WS_ALLOWED_ORIGINS` allowlist (empty by default — all browser origins rejected) | Non-browser clients that omit `Origin` are allowed through (by design — agent clients) |
+| 36 | **Spoofing** | Revoked agent persists on open WebSocket | `ws.go:216-248` | Heartbeat timer re-validates agent credential against DB every 25 seconds; revoked agents receive close code `4010` | Up to 25-second window between revocation and forced disconnect |
+| 37 | **Tampering** | Capability escalation over WebSocket | `ws.go:166-214` | Capabilities are immutable after negotiation; each message checked against `granted` map before dispatch | None — capabilities fixed at connection time |
+| 38 | **Tampering** | WireGuard key injection via agent message | `ws.go:359-397`, `node.go:392-400` | `validWGPubkey()` validates key format before DB write; `serverUpdatePeer()` re-validates pubkey, endpoint, and allowed_ips before passing to `wg` CLI | None — defense-in-depth validation at both layers |
+| 39 | **Denial of Service** | Agent message flooding | `ws.go:128-155` | Per-connection rate limit: 60 messages per 60-second window; exceeding closes connection with code 4008 | None — rate limit enforced before message dispatch |
+| 40 | **Denial of Service** | Relay bandwidth abuse | `relay.go:109-117` | Byte-rate limit: 10 MB per 60-second window per source node; relay bindings require both nodes connected | None — bandwidth and binding constraints prevent amplification |
 
 ### TLS and Network Surface
 
 | # | Category | Threat | Component | Mitigation | Residual Risk |
 |---|----------|--------|-----------|------------|---------------|
-| 40 | **Spoofing** | IP spoofing via X-Forwarded-For | `respond.go:146-148` | `clientIP()` always returns `RemoteAddr` — no proxy trust headers evaluated; auto-TLS eliminates the need for a reverse proxy | None — spoofing surface eliminated by design |
-| 41 | **Spoofing** | Certificate issuance for wrong domain | `main.go:239-243` | `autocert.HostWhitelist(host)` restricts cert issuance to the exact hostname from `BASE_URL` | None — only configured hostname accepted |
-| 42 | **Information Disclosure** | Plaintext traffic interception | `main.go:231-278` | Auto-TLS via Let's Encrypt when `BASE_URL` uses `https://`; HSTS header (`max-age=31536000; includeSubDomains`) set on all responses | HTTP dev mode has no encryption — never expose to the internet |
-| 43 | **Denial of Service** | TLS cert exhaustion via random hostnames | `main.go:239-243` | `HostWhitelist` rejects certificate requests for any hostname not matching BASE_URL | None — rate limits on Let's Encrypt API are an external safeguard |
+| 41 | **Spoofing** | IP spoofing via X-Forwarded-For | `respond.go:146-148` | `clientIP()` always returns `RemoteAddr` — no proxy trust headers evaluated; auto-TLS eliminates the need for a reverse proxy | None — spoofing surface eliminated by design |
+| 42 | **Spoofing** | Certificate issuance for wrong domain | `main.go:239-243` | `autocert.HostWhitelist(host)` restricts cert issuance to the exact hostname from `BASE_URL` | None — only configured hostname accepted |
+| 43 | **Information Disclosure** | Plaintext traffic interception | `main.go:231-278` | Auto-TLS via Let's Encrypt when `BASE_URL` uses `https://`; HSTS header (`max-age=31536000; includeSubDomains`) set on all responses | HTTP dev mode has no encryption — never expose to the internet |
+| 44 | **Denial of Service** | TLS cert exhaustion via random hostnames | `main.go:239-243` | `HostWhitelist` rejects certificate requests for any hostname not matching BASE_URL | None — rate limits on Let's Encrypt API are an external safeguard |
 
 ---
 

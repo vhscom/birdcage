@@ -11,9 +11,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/coder/websocket"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"birdcage/internal/api"
 	"birdcage/internal/ui"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m model) dispatchAction() (model, tea.Cmd) {
@@ -36,7 +36,7 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 		m.startInput([]string{"Type filter (optional)"})
 		m.inputHint = "  Examples:  login.*, session.*, ws.*\n" +
 			"  Available: login.*, registration.*, password.*, session.*, challenge.*,\n" +
-			"             agent.*, ws.*, node.*, bridge.*, scan.*, rate_limit.*\n" +
+			"             agent.*, ws.*, node.*, bridge.*, scan.*, rate_limit.*, tls.*\n" +
 			"  Combine:   login.*,session.revoke"
 	case actionViewNodes:
 		m.nodeList = nil

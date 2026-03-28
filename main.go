@@ -15,10 +15,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"text/template"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
+	"text/template"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -276,19 +277,36 @@ func serveTLS(ctx context.Context, handler http.Handler) {
 
 	tlsCfg := m.TLSConfig()
 	inner := tlsCfg.GetCertificate
+
+	var tlsRejectSeen sync.Map // ip → time.Time
+	const tlsRejectCooldown = time.Minute
+
 	tlsCfg.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 		if hello.ServerName == "" || net.ParseIP(hello.ServerName) != nil {
-			slog.Warn("tls rejected", "reason", "missing or IP-based SNI", "ip", hello.Conn.RemoteAddr().String(), "sni", hello.ServerName)
+			rawAddr := hello.Conn.RemoteAddr().String()
+			ip, _, _ := net.SplitHostPort(rawAddr)
+			if ip == "" {
+				ip = rawAddr
+			}
+			slog.Warn("tls rejected", "reason", "missing or IP-based SNI", "ip", rawAddr, "sni", hello.ServerName)
+			now := time.Now()
+			if last, ok := tlsRejectSeen.Load(ip); !ok || now.Sub(last.(time.Time)) >= tlsRejectCooldown {
+				tlsRejectSeen.Store(ip, now)
+				emitEvent("tls.rejected", ip, 0, "", 0, map[string]any{
+					"reason": "no_sni",
+					"sni":    hello.ServerName,
+				})
+			}
 			return nil, fmt.Errorf("rejected: no SNI or bare IP")
 		}
 		return inner(hello)
 	}
 
 	tlsSrv := &http.Server{
-		Addr:               cfg.Addr,
-		Handler:            handler,
-		TLSConfig:          tlsCfg,
-		ReadHeaderTimeout:  10 * time.Second,
+		Addr:              cfg.Addr,
+		Handler:           handler,
+		TLSConfig:         tlsCfg,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	httpSrv := &http.Server{

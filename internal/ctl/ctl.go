@@ -1,9 +1,11 @@
 package ctl
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coder/websocket"
@@ -29,6 +31,7 @@ const (
 	stateTailEvents
 	stateFrameInspector
 	stateFrameDetail
+	stateCloakPicker
 )
 
 type action int
@@ -48,7 +51,21 @@ const (
 	actionListAgents
 	actionProvisionAgent
 	actionRevokeAgent
+	// Cloak
+	actionCloakStatus
+	actionCloakEnable
+	actionCloakDisable
 )
+
+// cloakDurationItem is a selectable duration for the cloak picker.
+type cloakDurationItem struct {
+	label   string
+	minutes int
+}
+
+func (i cloakDurationItem) Title() string       { return i.label }
+func (i cloakDurationItem) Description() string { return "" }
+func (i cloakDurationItem) FilterValue() string { return i.label }
 
 type wsFrame struct {
 	Dir  string // ">" send, "<" recv
@@ -81,6 +98,11 @@ var menuItems = []menuItem{
 	{label: "List agents", action: actionListAgents},
 	{label: "Provision agent", action: actionProvisionAgent},
 	{label: "Revoke agent", action: actionRevokeAgent},
+
+	{label: "CLOAK", isHeader: true},
+	{label: "Cloak status", action: actionCloakStatus},
+	{label: "Enable cloak", action: actionCloakEnable},
+	{label: "Disable cloak", action: actionCloakDisable},
 }
 
 // messages
@@ -168,6 +190,9 @@ type model struct {
 	// frame inspector state
 	frames      []wsFrame
 	framesTable table.Model
+
+	// cloak picker state
+	cloakPicker list.Model
 
 	// terminal dimensions
 	width int
@@ -297,6 +322,8 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleFrameInspector(msg)
 	case stateFrameDetail:
 		return m.handleFrameDetail(msg)
+	case stateCloakPicker:
+		return m.handleCloakPicker(msg)
 	case stateResult, stateSessions, stateEventStats, stateAgents, stateNodes:
 		return m.handleDataView(key)
 	}
@@ -489,4 +516,26 @@ func (m model) handleFrameDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+func (m model) handleCloakPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		selected, ok := m.cloakPicker.SelectedItem().(cloakDurationItem)
+		if !ok {
+			return m, nil
+		}
+		m.inputs = []string{strconv.Itoa(selected.minutes)}
+		m.state = stateConfirm
+		return m, nil
+	case "esc":
+		m.state = stateMenu
+		return m, nil
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	}
+	var cmd tea.Cmd
+	m.cloakPicker, cmd = m.cloakPicker.Update(msg)
+	return m, cmd
 }

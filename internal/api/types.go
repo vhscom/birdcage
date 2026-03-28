@@ -125,6 +125,27 @@ type ListNodesResponse struct {
 	Nodes []Node `json:"nodes"`
 }
 
+// --- Cloak ---
+
+// CloakStatusResponse is the response from GET /ops/cloak.
+type CloakStatusResponse struct {
+	Active       bool   `json:"active"`
+	Until        string `json:"until,omitempty"`
+	RemainingSec int    `json:"remaining_sec,omitempty"`
+}
+
+// EnableCloakRequest is the request body for POST /ops/cloak.
+type EnableCloakRequest struct {
+	DurationMin int `json:"duration_min,omitempty"`
+}
+
+// EnableCloakResponse is the response from POST /ops/cloak.
+type EnableCloakResponse struct {
+	Active      bool   `json:"active"`
+	Until       string `json:"until"`
+	DurationMin int    `json:"duration_min"`
+}
+
 // DefaultSince returns the ISO 8601 timestamp for 24 hours ago.
 func DefaultSince() string {
 	return time.Now().UTC().Add(-24 * time.Hour).Format(time.RFC3339)

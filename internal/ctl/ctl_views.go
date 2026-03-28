@@ -142,6 +142,8 @@ func (m model) View() string {
 		b.WriteString(m.viewFrameInspector())
 	case stateFrameDetail:
 		b.WriteString(m.viewFrameDetail())
+	case stateCloakPicker:
+		b.WriteString(m.viewCloakPicker())
 	}
 
 	b.WriteString("\n")
@@ -209,6 +211,14 @@ func (m model) viewConfirm() string {
 		target = fmt.Sprintf("agent '%s'", m.inputs[0])
 	case actionRevokeAgent:
 		target = fmt.Sprintf("agent '%s'", m.inputs[0])
+	case actionCloakEnable:
+		if len(m.inputs) > 0 && m.inputs[0] != "" && m.inputs[0] != "0" {
+			target = fmt.Sprintf("cloak mode for %s minutes", m.inputs[0])
+		} else {
+			target = "cloak mode for default duration"
+		}
+	case actionCloakDisable:
+		target = "cloak mode"
 	}
 
 	verb := "Execute"
@@ -217,6 +227,10 @@ func (m model) viewConfirm() string {
 		verb = "Revoke"
 	case actionProvisionAgent:
 		verb = "Provision"
+	case actionCloakEnable:
+		verb = "Enable"
+	case actionCloakDisable:
+		verb = "Disable"
 	}
 
 	b.WriteString(ui.ErrorStyle.Render(fmt.Sprintf("%s %s?", verb, target)))
@@ -568,6 +582,10 @@ func (m model) viewFrameInspector() string {
 	b.WriteString(m.framesTable.View())
 	b.WriteString(ui.DimStyle.Render("\nj/k navigate | enter detail | f back | q quit"))
 	return b.String()
+}
+
+func (m model) viewCloakPicker() string {
+	return m.cloakPicker.View() + "\n" + ui.DimStyle.Render("enter select | esc back | q quit")
 }
 
 func (m model) viewFrameDetail() string {

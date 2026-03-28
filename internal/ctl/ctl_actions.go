@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/coder/websocket"
 
@@ -56,6 +58,31 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 	// Single-field input
 	case actionProvisionAgent:
 		m.startInput([]string{"Agent name"})
+
+	// Cloak
+	case actionCloakStatus:
+		return m, m.fetchCloakStatus()
+	case actionCloakEnable:
+		items := []list.Item{
+			cloakDurationItem{label: "15 minutes", minutes: 15},
+			cloakDurationItem{label: "30 minutes", minutes: 30},
+			cloakDurationItem{label: "1 hour", minutes: 60},
+			cloakDurationItem{label: "4 hours", minutes: 240},
+			cloakDurationItem{label: "24 hours", minutes: 1440},
+			cloakDurationItem{label: "Server default", minutes: 0},
+		}
+		delegate := list.NewDefaultDelegate()
+		delegate.ShowDescription = false
+		l := list.New(items, delegate, 30, 10)
+		l.Title = "Cloak duration"
+		l.SetShowStatusBar(false)
+		l.SetFilteringEnabled(false)
+		l.SetShowHelp(false)
+		l.DisableQuitKeybindings()
+		m.cloakPicker = l
+		m.state = stateCloakPicker
+	case actionCloakDisable:
+		m.state = stateConfirm
 	}
 	return m, nil
 }
@@ -67,7 +94,6 @@ func (m model) afterInputComplete() (model, tea.Cmd) {
 		m.state = stateConfirm
 		return m, nil
 
-	// Actions that execute immediately after input
 	case actionTailEvents:
 		filter := strings.TrimSpace(m.inputs[0])
 		if filter != "" {
@@ -119,6 +145,25 @@ func (m model) executeAction() tea.Cmd {
 				return resultMsg{err: err}
 			}
 			return resultMsg{message: fmt.Sprintf("Agent '%s' revoked.", m.inputs[0])}
+
+		case actionCloakEnable:
+			req := api.EnableCloakRequest{}
+			if len(m.inputs) > 0 && m.inputs[0] != "" {
+				if n, err := strconv.Atoi(m.inputs[0]); err == nil && n > 0 {
+					req.DurationMin = n
+				}
+			}
+			resp, err := m.client.EnableCloak(ctx, req)
+			if err != nil {
+				return resultMsg{err: err}
+			}
+			return resultMsg{message: fmt.Sprintf("Cloak enabled for %d minutes.\nActive until %s.", resp.DurationMin, resp.Until)}
+
+		case actionCloakDisable:
+			if err := m.client.DisableCloak(ctx); err != nil {
+				return resultMsg{err: err}
+			}
+			return resultMsg{message: "Cloak mode disabled."}
 		}
 
 		return resultMsg{err: fmt.Errorf("unknown action")}
@@ -164,6 +209,22 @@ func (m model) fetchAgents() tea.Cmd {
 			return agentsMsg{err: err}
 		}
 		return agentsMsg{agents: resp.Agents}
+	}
+}
+
+func (m model) fetchCloakStatus() tea.Cmd {
+	return func() tea.Msg {
+		resp, err := m.client.GetCloakStatus(context.Background())
+		if err != nil {
+			return resultMsg{err: err}
+		}
+		if !resp.Active {
+			return resultMsg{message: "Cloak mode is inactive."}
+		}
+		return resultMsg{message: fmt.Sprintf(
+			"Cloak mode is ACTIVE\nUntil:     %s\nRemaining: %d minutes",
+			resp.Until, resp.RemainingSec/60,
+		)}
 	}
 }
 
@@ -382,7 +443,12 @@ func printUsage() {
 	fmt.Printf("  %s\n", title("Agents"))
 	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "List agents")), dim("Show agent credentials"))
 	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Provision agent")), dim("Create a new credential"))
-	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Revoke agent")), dim("Revoke a credential"))
+	fmt.Printf("  %s  %s\n\n", cmd(fmt.Sprintf(w, "Revoke agent")), dim("Revoke a credential"))
+
+	fmt.Printf("  %s\n", title("Cloak"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Cloak status")), dim("Show current cloak state"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Enable cloak")), dim("Hide ops surface from public IPs"))
+	fmt.Printf("  %s  %s\n", cmd(fmt.Sprintf(w, "Disable cloak")), dim("Restore normal access"))
 }
 
 // Run is the entry point for "birdcage ctl".

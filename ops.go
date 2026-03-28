@@ -78,7 +78,7 @@ func handleOpsSessionRevoke(w http.ResponseWriter, r *http.Request) {
 // GET /ops/agents
 func handleOpsAgentList(w http.ResponseWriter, r *http.Request) {
 	rows, err := store.Query(
-		"SELECT id, name, created_at, revoked_at FROM agent_credential ORDER BY created_at DESC",
+		"SELECT id, name, created_at FROM agent_credential WHERE revoked_at IS NULL ORDER BY created_at DESC",
 	)
 	if err != nil {
 		jsonError(w, 500, "INTERNAL_ERROR", "Query failed")
@@ -90,15 +90,10 @@ func handleOpsAgentList(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var id int
 		var name, created string
-		var revoked *string
-		rows.Scan(&id, &name, &created, &revoked)
-		a := map[string]any{
+		rows.Scan(&id, &name, &created)
+		agents = append(agents, map[string]any{
 			"id": id, "name": name, "created_at": created,
-		}
-		if revoked != nil {
-			a["revoked_at"] = *revoked
-		}
-		agents = append(agents, a)
+		})
 	}
 	jsonOK(w, map[string]any{"agents": agents})
 }

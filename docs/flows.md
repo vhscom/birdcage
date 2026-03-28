@@ -121,7 +121,7 @@ sequenceDiagram
   H-->>U: 200 {success: true}
 ```
 
-**Source:** [`auth.go:54-102`](../auth.go) | [`events.go:82-151`](../events.go) | [`session.go:25-71`](../session.go) | [`crypto.go:46-70`](../crypto.go)
+**Source:** [`auth.go:54-102`](../auth.go) | [`events.go:89-161`](../events.go) | [`session.go:25-71`](../session.go) | [`crypto.go:46-70`](../crypto.go)
 
 ---
 

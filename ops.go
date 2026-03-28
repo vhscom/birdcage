@@ -116,6 +116,10 @@ func handleOpsAgentCreate(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, 400, "VALIDATION_ERROR", "Name required")
 		return
 	}
+	if !validLabel(body.Name) {
+		jsonError(w, 400, "VALIDATION_ERROR", "Name must be 1-32 alphanumeric or hyphen characters")
+		return
+	}
 
 	apiKey := randomHex(32) // 256-bit key
 	keyHash := hashAPIKey(apiKey)

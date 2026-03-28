@@ -69,7 +69,10 @@ func TestNextMeshIP(t *testing.T) {
 		t.Fatalf("insert node 2: %v", err)
 	}
 
-	got := nextMeshIP()
+	got, err := nextMeshIP()
+	if err != nil {
+		t.Fatalf("nextMeshIP() unexpected error: %v", err)
+	}
 	if got != "10.0.0.4/32" {
 		t.Errorf("nextMeshIP() = %q, want %q", got, "10.0.0.4/32")
 	}
@@ -79,7 +82,10 @@ func TestNextMeshIP_SkipsServer(t *testing.T) {
 	nodeTestSetup(t)
 
 	// No nodes in the database yet. First call should skip .1 (server) and return .2.
-	got := nextMeshIP()
+	got, err := nextMeshIP()
+	if err != nil {
+		t.Fatalf("nextMeshIP() unexpected error: %v", err)
+	}
 	if got != "10.0.0.2/32" {
 		t.Errorf("nextMeshIP() = %q, want %q", got, "10.0.0.2/32")
 	}

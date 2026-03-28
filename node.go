@@ -61,7 +61,11 @@ func lookupNodeForAgent(agentCredID int) int {
 		name = fmt.Sprintf("node-%d", agentCredID)
 	}
 
-	meshIP := nextMeshIP()
+	meshIP, err := nextMeshIP()
+	if err != nil {
+		slog.Error("mesh full, cannot auto-create node", "agent_id", agentCredID)
+		return 0
+	}
 	_, err = store.Exec(
 		"INSERT INTO node (label, wg_pubkey, allowed_ips, agent_credential_id) VALUES (?,?,?,?)",
 		name, "pending", meshIP, agentCredID,
@@ -77,12 +81,12 @@ func lookupNodeForAgent(agentCredID int) int {
 }
 
 // nextMeshIP finds the next available IP in the 10.0.0.0/24 mesh.
-// 10.0.0.1 is reserved for the server.
-func nextMeshIP() string {
+// 10.0.0.1 is reserved for the server. Returns an error if all 253 addresses are exhausted.
+func nextMeshIP() (string, error) {
 	var maxOctet int
 	rows, err := store.Query("SELECT allowed_ips FROM node")
 	if err != nil {
-		return "10.0.0.2/32"
+		return "10.0.0.2/32", nil
 	}
 	defer rows.Close()
 
@@ -108,9 +112,9 @@ func nextMeshIP() string {
 		next = 2 // 10.0.0.1 is the server
 	}
 	if next > 254 {
-		next = 254
+		return "", fmt.Errorf("mesh full: all 253 addresses in use")
 	}
-	return fmt.Sprintf("10.0.0.%d/32", next)
+	return fmt.Sprintf("10.0.0.%d/32", next), nil
 }
 
 // handleWGStatus processes a wg.status message from a node agent.

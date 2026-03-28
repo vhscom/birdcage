@@ -308,7 +308,7 @@ func (m *model) closeTail() {
 		m.tailKeepaliveStop = nil
 	}
 	if m.tailConn != nil {
-		unsub := api.WSUnsubscribeRequest{Type: "unsubscribe_events", ID: "tail-2"}
+		unsub := api.WSUnsubscribeRequest{Type: "unsubscribe_events", ID: "tail-1"}
 		data, _ := json.Marshal(unsub)
 		_ = m.tailConn.Write(context.Background(), websocket.MessageText, data)
 		m.tailConn.Close(websocket.StatusNormalClosure, "client disconnected")

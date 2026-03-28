@@ -126,7 +126,7 @@ func setTokenCookies(w http.ResponseWriter, uid int, sid string) error {
 	if err != nil {
 		return err
 	}
-	refresh, err := signToken(uid, sid, "refresh", cfg.RefreshSecret, refreshExpiry)
+	refresh, err := signRefreshToken(uid, sid, cfg.RefreshSecret, 0) // gen=0 matches initial session refresh_gen
 	if err != nil {
 		return err
 	}

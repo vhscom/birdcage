@@ -83,9 +83,15 @@ func handleAgentWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		InsecureSkipVerify: true,
-	})
+	opts := &websocket.AcceptOptions{}
+	if cfg.WSAllowedOrigins != "" {
+		for _, o := range strings.Split(cfg.WSAllowedOrigins, ",") {
+			if o = strings.TrimSpace(o); o != "" {
+				opts.OriginPatterns = append(opts.OriginPatterns, o)
+			}
+		}
+	}
+	c, err := websocket.Accept(w, r, opts)
 	if err != nil {
 		return
 	}

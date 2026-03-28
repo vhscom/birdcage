@@ -50,7 +50,7 @@ sequenceDiagram
   H-->>U: 201 {success: true}
 ```
 
-**Source:** [`auth.go:11-51`](../auth.go) | [`crypto.go:29-43`](../crypto.go) | [`respond.go:50-64`](../respond.go)
+**Source:** [`auth.go:11-51`](../auth.go) | [`crypto.go:29-43`](../crypto.go) | [`respond.go:18-26`](../respond.go)
 
 ---
 
@@ -112,7 +112,7 @@ sequenceDiagram
   SS->>SS: enforceSessionLimit() — max 3 per user
   SS-->>H: sessionId
 
-  H->>H: signToken(access) + signToken(refresh, gen=0)
+  H->>H: signToken(access) + signRefreshToken(refresh, gen=0)
   Note over H: Access: {uid, sid, typ:"access", exp:+15min}<br/>Refresh: {uid, sid, typ:"refresh", gen:0, exp:+7d}<br/>Signed with separate secrets (HS256)
 
   H->>U: Set-Cookie: access_token (HttpOnly, Secure, SameSite=Strict)

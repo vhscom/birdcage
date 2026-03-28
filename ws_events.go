@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +71,8 @@ func handleWSQueryEvents(conn *wsConn, id string, payload json.RawMessage) {
 			"SELECT type, COUNT(*) FROM security_event WHERE created_at >= ? GROUP BY type", since,
 		)
 		if err != nil {
-			sendWSError(conn, id, "QUERY_ERROR", err.Error())
+			slog.Error("ws query_events aggregate", "error", err)
+			sendWSError(conn, id, "QUERY_ERROR", "Query failed")
 			return
 		}
 		defer rows.Close()
@@ -102,7 +104,8 @@ func handleWSQueryEvents(conn *wsConn, id string, payload json.RawMessage) {
 		args...,
 	)
 	if err != nil {
-		sendWSError(conn, id, "QUERY_ERROR", err.Error())
+		slog.Error("ws query_events", "error", err)
+		sendWSError(conn, id, "QUERY_ERROR", "Query failed")
 		return
 	}
 	defer rows.Close()

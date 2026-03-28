@@ -19,7 +19,7 @@ func buildEventsTable(events []api.Event) table.Model {
 		{Title: "Type", Width: 24},
 		{Title: "IP", Width: 16},
 		{Title: "User", Width: 8},
-		{Title: "Actor", Width: 28},
+		{Title: "Actor", Width: 16},
 		{Title: "Time", Width: 20},
 	}
 

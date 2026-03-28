@@ -299,7 +299,23 @@ func serveTLS(ctx context.Context, handler http.Handler) {
 			}
 			return nil, fmt.Errorf("rejected: no SNI or bare IP")
 		}
-		return inner(hello)
+		cert, err := inner(hello)
+		if err != nil {
+			rawAddr := hello.Conn.RemoteAddr().String()
+			ip, _, _ := net.SplitHostPort(rawAddr)
+			if ip == "" {
+				ip = rawAddr
+			}
+			now := time.Now()
+			if last, ok := tlsRejectSeen.Load(ip); !ok || now.Sub(last.(time.Time)) >= tlsRejectCooldown {
+				tlsRejectSeen.Store(ip, now)
+				emitEvent("tls.rejected", ip, 0, "", 0, map[string]any{
+					"reason": "wrong_host",
+					"sni":    hello.ServerName,
+				})
+			}
+		}
+		return cert, err
 	}
 
 	tlsSrv := &http.Server{

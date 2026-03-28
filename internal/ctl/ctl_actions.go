@@ -74,7 +74,11 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 		delegate := list.NewDefaultDelegate()
 		delegate.ShowDescription = false
 		delegate.SetSpacing(0)
-		l := list.New(items, delegate, 30, 9)
+		w := m.width
+		if w == 0 {
+			w = 40
+		}
+		l := list.New(items, delegate, w, m.pickerHeight())
 		l.Title = "Cloak duration"
 		l.SetShowStatusBar(false)
 		l.SetFilteringEnabled(false)

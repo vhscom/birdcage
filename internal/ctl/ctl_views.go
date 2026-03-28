@@ -13,7 +13,7 @@ import (
 	"birdcage/internal/ui"
 )
 
-func buildEventsTable(events []api.Event) table.Model {
+func buildEventsTable(events []api.Event, height int) table.Model {
 	columns := []table.Column{
 		{Title: "ID", Width: 6},
 		{Title: "Type", Width: 24},
@@ -54,7 +54,7 @@ func buildEventsTable(events []api.Event) table.Model {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
-		table.WithHeight(15),
+		table.WithHeight(height),
 		table.WithFocused(true),
 		table.WithStyles(s),
 	)
@@ -62,7 +62,7 @@ func buildEventsTable(events []api.Event) table.Model {
 	return t
 }
 
-func buildFramesTable(frames []wsFrame) table.Model {
+func buildFramesTable(frames []wsFrame, height int) table.Model {
 	columns := []table.Column{
 		{Title: "Dir", Width: 3},
 		{Title: "Type", Width: 28},
@@ -96,7 +96,7 @@ func buildFramesTable(frames []wsFrame) table.Model {
 	t := table.New(
 		table.WithColumns(columns),
 		table.WithRows(rows),
-		table.WithHeight(20),
+		table.WithHeight(height),
 		table.WithFocused(true),
 		table.WithStyles(s),
 	)

@@ -195,7 +195,8 @@ type model struct {
 	cloakPicker list.Model
 
 	// terminal dimensions
-	width int
+	width  int
+	height int
 }
 
 func initialModel(client *api.Client) model {
@@ -221,6 +222,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
+		m.height = msg.Height
+		switch m.state {
+		case stateEvents:
+			m.eventsTable.SetHeight(m.tableHeight())
+		case stateFrameInspector:
+			m.framesTable.SetHeight(m.tableHeight())
+		case stateCloakPicker:
+			m.cloakPicker.SetHeight(m.pickerHeight())
+		}
 		return m, nil
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -239,7 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dataErr = msg.err
 		m.state = stateEvents
 		if msg.err == nil && len(msg.events) > 0 {
-			m.eventsTable = buildEventsTable(msg.events)
+			m.eventsTable = buildEventsTable(msg.events, m.tableHeight())
 		}
 		return m, nil
 	case eventStatsMsg:
@@ -277,7 +287,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.state == stateFrameInspector {
 			cursor := m.framesTable.Cursor()
-			m.framesTable = buildFramesTable(m.frames)
+			m.framesTable = buildFramesTable(m.frames, m.tableHeight())
 			m.framesTable.SetCursor(cursor)
 		}
 		if msg.event.Type != "" {
@@ -466,7 +476,7 @@ func (m model) handleTailView(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "f":
 		if len(m.frames) > 0 {
-			m.framesTable = buildFramesTable(m.frames)
+			m.framesTable = buildFramesTable(m.frames, m.tableHeight())
 			m.state = stateFrameInspector
 		}
 		return m, nil
@@ -516,6 +526,30 @@ func (m model) handleFrameDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	return m, nil
+}
+
+// tableHeight returns the number of data rows a table should display.
+// Overhead: title(2) + view header(2) + table header+border(2) + hint(2) + trailing newline(1) = 9.
+func (m model) tableHeight() int {
+	if m.height == 0 {
+		return 15
+	}
+	if h := m.height - 9; h >= 3 {
+		return h
+	}
+	return 3
+}
+
+// pickerHeight returns the height to use for the cloak duration list.
+// Overhead: title(2) + hint(2) + trailing newline(1) = 5.
+func (m model) pickerHeight() int {
+	if m.height == 0 {
+		return 9
+	}
+	if h := m.height - 5; h >= 8 {
+		return h
+	}
+	return 8
 }
 
 func (m model) handleCloakPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -321,6 +321,10 @@ func handleOpsCloakEnable(w http.ResponseWriter, r *http.Request) {
 
 // DELETE /ops/cloak
 func handleOpsCloakDisable(w http.ResponseWriter, r *http.Request) {
+	if !isCloaked() {
+		jsonError(w, http.StatusConflict, "NOT_ACTIVE", "cloak is not active")
+		return
+	}
 	disableCloak()
 
 	emitEvent("cloak.disabled", clientIP(r), 0, r.UserAgent(), 200, map[string]any{

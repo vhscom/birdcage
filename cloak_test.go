@@ -420,3 +420,12 @@ func TestOpsCloakDisable(t *testing.T) {
 		t.Error("isCloaked() should be false after disable")
 	}
 }
+
+func TestOpsCloakDisable_NotActive(t *testing.T) {
+	resetCloakState(t)
+	srv, apiKey := setupCloakOpsServer(t)
+	resp, _ := agentDelete(srv.URL+"/ops/cloak", apiKey)
+	if resp.StatusCode != http.StatusConflict {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusConflict)
+	}
+}

@@ -234,6 +234,9 @@ func (m model) viewConfirm() string {
 	}
 
 	b.WriteString(ui.ErrorStyle.Render(fmt.Sprintf("%s %s?", verb, target)))
+	if m.action == actionCloakEnable {
+		b.WriteString(ui.DimStyle.Render("\n\nWarning: if you are on a public IP, enabling cloak will\nblock your access to this TUI until the cloak expires."))
+	}
 	b.WriteString(ui.DimStyle.Render("\n\ny confirm | n cancel"))
 	return b.String()
 }

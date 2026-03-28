@@ -617,7 +617,9 @@ func envInt(k string, def int) int {
 	return def
 }
 
-// ensureAgentCredential creates the agent credential from AGENT_KEY if it doesn't exist.
+// ensureAgentCredential creates or updates the home agent credential from AGENT_KEY.
+// On key rotation, it updates the existing home credential's key hash rather than
+// creating a second credential.
 func ensureAgentCredential() {
 	if cfg.AgentKey == "" {
 		return
@@ -626,7 +628,7 @@ func ensureAgentCredential() {
 	keyHash := hashAPIKey(cfg.AgentKey)
 
 	var exists int
-	if err := store.QueryRow("SELECT COUNT(*) FROM agent_credential WHERE key_hash = ?", keyHash).Scan(&exists); err != nil {
+	if err := store.QueryRow("SELECT COUNT(*) FROM agent_credential WHERE key_hash = ? AND revoked_at IS NULL", keyHash).Scan(&exists); err != nil {
 		logError("agent_credential.check", err)
 	}
 	if exists > 0 {
@@ -637,18 +639,27 @@ func ensureAgentCredential() {
 		"INSERT INTO agent_credential (name, key_hash) VALUES (?, ?)",
 		"home", keyHash,
 	)
-	if err != nil {
-		if isUniqueViolation(err) {
-			// Name "home" already taken, try with suffix
-			_, err = store.Exec(
-				"INSERT INTO agent_credential (name, key_hash) VALUES (?, ?)",
-				fmt.Sprintf("agent-%s", keyHash[:8]), keyHash,
-			)
-		}
-		if err != nil {
-			slog.Error("failed to create agent credential", "error", err)
-		}
-	} else {
+	if err == nil {
 		slog.Info("agent credential created", "name", "home")
+		return
+	}
+	if !isUniqueViolation(err) {
+		slog.Error("failed to create agent credential", "error", err)
+		return
+	}
+
+	// "home" exists with a different key — rotate its key hash.
+	res, err := store.Exec(
+		"UPDATE agent_credential SET key_hash = ? WHERE name = 'home' AND revoked_at IS NULL",
+		keyHash,
+	)
+	if err != nil {
+		slog.Error("failed to rotate home agent key", "error", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		slog.Warn("home agent is revoked; AGENT_KEY not registered")
+	} else {
+		slog.Info("home agent credential key rotated")
 	}
 }

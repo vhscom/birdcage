@@ -142,12 +142,15 @@ func clearTokenCookies(w http.ResponseWriter) {
 
 // --- IP helpers ---
 
-func connIP(r *http.Request) string {
-	host := r.RemoteAddr
-	if i := strings.LastIndex(host, ":"); i >= 0 {
-		host = host[:i]
+func stripPort(addr string) string {
+	if i := strings.LastIndex(addr, ":"); i >= 0 {
+		return addr[:i]
 	}
-	return host
+	return addr
+}
+
+func connIP(r *http.Request) string {
+	return stripPort(r.RemoteAddr)
 }
 
 func clientIP(r *http.Request) string {

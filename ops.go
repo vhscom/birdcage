@@ -283,6 +283,52 @@ func handleOpsNodeList(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"nodes": nodes})
 }
 
+// GET /ops/cloak
+func handleOpsCloakStatus(w http.ResponseWriter, r *http.Request) {
+	active := isCloaked()
+	until := cloakUntil()
+	resp := map[string]any{"active": active}
+	if active {
+		resp["until"] = until.UTC().Format(time.RFC3339)
+		resp["remaining_sec"] = int(time.Until(until).Seconds())
+	}
+	jsonOK(w, resp)
+}
+
+// POST /ops/cloak — body: {"duration_min": N} (optional; defaults to CLOAK_DURATION_MIN)
+func handleOpsCloakEnable(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		DurationMin int `json:"duration_min"`
+	}
+	json.NewDecoder(r.Body).Decode(&body) // optional body; parse errors fall back to default
+
+	durMin := cfg.CloakDurationMin
+	if body.DurationMin > 0 && body.DurationMin <= 1440 { // cap at 24 hours
+		durMin = body.DurationMin
+	}
+
+	enableCloak(time.Duration(durMin) * time.Minute)
+
+	emitEvent("cloak.enabled", clientIP(r), 0, r.UserAgent(), 200, map[string]any{
+		"duration_min": durMin, "actor": "agent:" + getAgentCred(r).Name, "auto": false,
+	})
+	jsonOK(w, map[string]any{
+		"active":       true,
+		"until":        cloakUntil().UTC().Format(time.RFC3339),
+		"duration_min": durMin,
+	})
+}
+
+// DELETE /ops/cloak
+func handleOpsCloakDisable(w http.ResponseWriter, r *http.Request) {
+	disableCloak()
+
+	emitEvent("cloak.disabled", clientIP(r), 0, r.UserAgent(), 200, map[string]any{
+		"actor": "agent:" + getAgentCred(r).Name,
+	})
+	jsonOK(w, map[string]any{"active": false})
+}
+
 // --- Helpers ---
 
 func intOr(s string, def int) int {

@@ -69,6 +69,7 @@ var agentCapabilities = map[string]bool{
 	"query_sessions":     true,
 	"subscribe_events":   true,
 	"revoke_session":     true,
+	"cloak_control":      true,
 }
 
 func handleAgentWS(w http.ResponseWriter, r *http.Request) {
@@ -374,6 +375,20 @@ func handleAgentMessage(conn *wsConn, cred *AgentCredential, granted map[string]
 	case "unsubscribe_events":
 		handleWSUnsubscribeEvents(conn, msg.ID, subs)
 
+	case "cloak.enable":
+		if !granted["cloak_control"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSCloakEnable(conn, cred, msg.ID, msg.Payload)
+
+	case "cloak.disable":
+		if !granted["cloak_control"] {
+			sendWSError(conn, msg.ID, "NOT_GRANTED", "Capability not granted")
+			return
+		}
+		handleWSCloakDisable(conn, cred, msg.ID)
+
 	default:
 		sendWSError(conn, msg.ID, "UNKNOWN_TYPE", "Unknown message type: "+msg.Type)
 	}
@@ -506,4 +521,34 @@ func sendWSError(conn *wsConn, id, code, message string) {
 
 func closeWSAgent(conn *wsConn, code int, reason string) {
 	conn.Close(websocket.StatusCode(code), reason)
+}
+
+func handleWSCloakEnable(conn *wsConn, cred *AgentCredential, id string, payload json.RawMessage) {
+	var p struct {
+		DurationMin int `json:"duration_min"`
+	}
+	json.Unmarshal(payload, &p) // #nosec G104 — optional payload, defaults on error
+
+	durMin := cfg.CloakDurationMin
+	if p.DurationMin > 0 && p.DurationMin <= 1440 {
+		durMin = p.DurationMin
+	}
+
+	enableCloak(time.Duration(durMin) * time.Minute)
+
+	emitEvent("cloak.enabled", stripPort(conn.remoteAddr), 0, "", 200, map[string]any{
+		"duration_min": durMin, "actor": "agent:" + cred.Name, "auto": false,
+	})
+	sendWSResult(conn, id, "cloak.enable", map[string]any{
+		"active": true,
+		"until":  cloakUntil().UTC().Format(time.RFC3339),
+	})
+}
+
+func handleWSCloakDisable(conn *wsConn, cred *AgentCredential, id string) {
+	disableCloak()
+	emitEvent("cloak.disabled", stripPort(conn.remoteAddr), 0, "", 200, map[string]any{
+		"actor": "agent:" + cred.Name,
+	})
+	sendWSResult(conn, id, "cloak.disable", map[string]any{"active": false})
 }

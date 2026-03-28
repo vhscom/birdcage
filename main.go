@@ -51,6 +51,9 @@ type Config struct {
 	WGListenPort      int
 	WGEndpoint        string
 	WGInterface       string
+	WGSubnet          string
+	CloakDurationMin  int
+	CloakOnAttack     bool
 }
 
 var cfg *Config
@@ -149,6 +152,7 @@ func runServe() {
 
 	// Provision server WireGuard interface
 	serverEnsureWG()
+	initWGSubnet(cfg.WGSubnet)
 
 	mux := http.NewServeMux()
 
@@ -190,14 +194,14 @@ func runServe() {
 	mux.Handle("POST /account/password", passwordRL(requireAuthMiddleware(http.HandlerFunc(handlePasswordChange))))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
 
-	// --- Agent WebSocket (bearer token auth) ---
-	mux.HandleFunc("GET /ws", func(w http.ResponseWriter, r *http.Request) {
+	// --- Agent WebSocket (bearer token auth, cloaked from public IPs) ---
+	mux.Handle("GET /ws", cloakMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 			requireAgentKey(http.HandlerFunc(handleAgentWS)).ServeHTTP(w, r)
 			return
 		}
 		http.NotFound(w, r)
-	})
+	})))
 
 	// --- Control proxy (authenticated) — bridge to claw ---
 	proxy := newProxy()
@@ -218,15 +222,18 @@ func runServe() {
 		proxy.ServeHTTP(w, r)
 	})))
 
-	// --- Ops API (agent key for reads, provisioning secret for writes) ---
-	mux.Handle("GET /ops/sessions", requireAgentKey(http.HandlerFunc(handleOpsSessions)))
-	mux.Handle("POST /ops/sessions/revoke", requireAgentKey(http.HandlerFunc(handleOpsSessionRevoke)))
-	mux.Handle("GET /ops/agents", requireAgentKey(http.HandlerFunc(handleOpsAgentList)))
-	mux.Handle("POST /ops/agents", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentCreate)))
-	mux.Handle("DELETE /ops/agents/{name}", requireProvisioningSecret(http.HandlerFunc(handleOpsAgentRevoke)))
-	mux.Handle("GET /ops/events", requireAgentKey(http.HandlerFunc(handleOpsEvents)))
-	mux.Handle("GET /ops/events/stats", requireAgentKey(http.HandlerFunc(handleOpsEventStats)))
-	mux.Handle("GET /ops/nodes", requireAgentKey(http.HandlerFunc(handleOpsNodeList)))
+	// --- Ops API (cloaked from public IPs; agent key for reads/actions, provisioning secret for credential lifecycle) ---
+	mux.Handle("GET /ops/sessions", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsSessions))))
+	mux.Handle("POST /ops/sessions/revoke", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsSessionRevoke))))
+	mux.Handle("GET /ops/agents", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsAgentList))))
+	mux.Handle("POST /ops/agents", cloakMiddleware(requireProvisioningSecret(http.HandlerFunc(handleOpsAgentCreate))))
+	mux.Handle("DELETE /ops/agents/{name}", cloakMiddleware(requireProvisioningSecret(http.HandlerFunc(handleOpsAgentRevoke))))
+	mux.Handle("GET /ops/events", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsEvents))))
+	mux.Handle("GET /ops/events/stats", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsEventStats))))
+	mux.Handle("GET /ops/nodes", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsNodeList))))
+	mux.Handle("GET /ops/cloak", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsCloakStatus))))
+	mux.Handle("POST /ops/cloak", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsCloakEnable))))
+	mux.Handle("DELETE /ops/cloak", cloakMiddleware(requireAgentKey(http.HandlerFunc(handleOpsCloakDisable))))
 
 	// Global middleware: access log → security headers → body limit → routes
 	handler := accessLog(securityHeaders(maxBody(mux)))
@@ -550,12 +557,7 @@ func loadConfig() *Config {
 
 	defaultAddr := addrFromURL(baseURL)
 
-	wgPort := 51820
-	if v := os.Getenv("WG_LISTEN_PORT"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil {
-			wgPort = p
-		}
-	}
+	wgPort := envInt("WG_LISTEN_PORT", 51820)
 
 	defaultIface := "wg0"
 	if runtime.GOOS == "darwin" {
@@ -580,6 +582,9 @@ func loadConfig() *Config {
 		WGListenPort:      wgPort,
 		WGEndpoint:        os.Getenv("WG_ENDPOINT"),
 		WGInterface:       wgIface,
+		WGSubnet:          envOr("WG_SUBNET", "10.0.0.0/24"),
+		CloakDurationMin:  envInt("CLOAK_DURATION_MIN", 60),
+		CloakOnAttack:     os.Getenv("CLOAK_ON_ATTACK") != "false",
 	}
 }
 
@@ -601,6 +606,15 @@ func envOr(k, d string) string {
 		return v
 	}
 	return d
+}
+
+func envInt(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
 }
 
 // ensureAgentCredential creates the agent credential from AGENT_KEY if it doesn't exist.

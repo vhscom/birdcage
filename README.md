@@ -71,7 +71,7 @@ Open `https://your-domain.example.com` in a browser and register with the token 
 
 **WireGuard mesh** — Server provisions its own WireGuard interface and coordinates peers. Agent runs at home alongside the claw, manages WireGuard, discovers endpoints via STUN, falls back to relay when direct UDP fails, rotates keys on a configurable interval.
 
-**Ops API + TUI** — REST endpoints and an interactive terminal dashboard (`birdcage ctl`) for managing sessions, events, agent credentials, and mesh nodes. See [ops documentation](docs/ops.md).
+**Ops API + TUI** — REST endpoints and an interactive terminal dashboard (`birdcage ctl`) for managing sessions, events, agent credentials, and mesh nodes. Includes cloak mode: when active, all ops and WebSocket endpoints return plain 404 to public IPs while WireGuard mesh addresses pass through unconditionally. Cloak auto-engages on attack (auth failures, TLS probes, rate-limit hits) and is on by default. See [ops documentation](docs/ops.md).
 
 ## CLI
 
@@ -120,7 +120,7 @@ For local development, use `BASE_URL=http://localhost:8080` (the default).
 - **Privacy by architecture.** Oauth-free. Traffic between the VPS and your home machine is encrypted via WireGuard.
 - **One binary.** Server, agent, CLI — same executable, different subcommands.
 - **No magic.** `birdcage init` shows you what it creates. `birdcage serve` does what it says. One `.env`, one database.
-- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under attack.
+- **Secure by default.** HTTPS is automatic. Cookies are SameSite=Strict. Headers are OWASP. PoW activates under brute force. Cloak mode auto-engages on attack and hides the ops surface from public IPs.
 
 ## Documentation
 

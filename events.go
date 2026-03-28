@@ -81,6 +81,9 @@ func emitEvent(eventType, ip string, userID int, ua string, status int, detail m
 		return
 	}
 	notifySubscribers()
+	if cfg.CloakOnAttack && !isCloaked() {
+		checkCloakTrigger(eventType)
+	}
 }
 
 // --- Adaptive proof-of-work challenges ---

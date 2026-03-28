@@ -21,8 +21,8 @@ func TestSecurityHeaders(t *testing.T) {
 
 	checks := map[string]string{
 		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-		"X-Frame-Options":          "DENY",
-		"X-Content-Type-Options":   "nosniff",
+		"X-Frame-Options":           "DENY",
+		"X-Content-Type-Options":    "nosniff",
 	}
 	for header, want := range checks {
 		got := rec.Header().Get(header)
@@ -306,4 +306,3 @@ func TestRateLimit(t *testing.T) {
 		}
 	}
 }
-

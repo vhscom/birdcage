@@ -302,3 +302,86 @@ func TestAgentWSUnknownType(t *testing.T) {
 		t.Errorf("code = %v, want UNKNOWN_TYPE", resp["code"])
 	}
 }
+
+// --- Cloak WS tests ---
+
+func TestWSCloakEnable(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	cfg.CloakDurationMin = 15
+	resetCloakState(t)
+	conn := dialWS(t, srv.URL, apiKey)
+	negotiateTestCaps(t, conn, []string{"cloak_control"})
+
+	wsSend(t, conn, map[string]any{
+		"type":    "cloak.enable",
+		"id":      "1",
+		"payload": map[string]any{"duration_min": 30},
+	})
+
+	resp := wsReadSkipSync(t, conn)
+	if resp["type"] != "cloak.enable.result" {
+		t.Fatalf("type = %v, want cloak.enable.result", resp["type"])
+	}
+	payload, _ := resp["payload"].(map[string]any)
+	if active, _ := payload["active"].(bool); !active {
+		t.Error("active should be true in payload")
+	}
+	if payload["until"] == nil || payload["until"] == "" {
+		t.Error("until should be present in payload")
+	}
+	if !isCloaked() {
+		t.Error("isCloaked() should be true after cloak.enable")
+	}
+}
+
+func TestWSCloakDisable(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	cfg.CloakDurationMin = 15
+	resetCloakState(t)
+	enableCloak(time.Hour)
+	conn := dialWS(t, srv.URL, apiKey)
+	negotiateTestCaps(t, conn, []string{"cloak_control"})
+
+	wsSend(t, conn, map[string]any{
+		"type": "cloak.disable",
+		"id":   "2",
+	})
+
+	resp := wsReadSkipSync(t, conn)
+	if resp["type"] != "cloak.disable.result" {
+		t.Fatalf("type = %v, want cloak.disable.result", resp["type"])
+	}
+	payload, _ := resp["payload"].(map[string]any)
+	if active, _ := payload["active"].(bool); active {
+		t.Error("active should be false in payload")
+	}
+	if isCloaked() {
+		t.Error("isCloaked() should be false after cloak.disable")
+	}
+}
+
+func TestWSCloakEnable_NotGranted(t *testing.T) {
+	srv, apiKey := setupWSServer(t)
+	cfg.CloakDurationMin = 15
+	resetCloakState(t)
+	conn := dialWS(t, srv.URL, apiKey)
+	// Negotiate without cloak_control
+	negotiateTestCaps(t, conn, []string{"wg_sync"})
+
+	wsSend(t, conn, map[string]any{
+		"type":    "cloak.enable",
+		"id":      "3",
+		"payload": map[string]any{"duration_min": 10},
+	})
+
+	resp := wsReadSkipSync(t, conn)
+	if resp["type"] != "error" {
+		t.Errorf("type = %v, want error", resp["type"])
+	}
+	if resp["code"] != "NOT_GRANTED" {
+		t.Errorf("code = %v, want NOT_GRANTED", resp["code"])
+	}
+	if isCloaked() {
+		t.Error("cloak should not be enabled without capability")
+	}
+}

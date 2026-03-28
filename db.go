@@ -97,4 +97,5 @@ func migrate() {
 			os.Exit(1)
 		}
 	}
+
 }

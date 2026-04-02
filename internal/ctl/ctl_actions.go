@@ -36,9 +36,9 @@ func (m model) dispatchAction() (model, tea.Cmd) {
 		m.tailErr = nil
 		m.tailConn = nil
 		m.startInput([]string{"Type filter (optional)"})
-		m.inputHint = "  Examples:  login.*, session.*, ws.*\n" +
+		m.inputHint = "  Examples:  login.*, session.*, passkey.*\n" +
 			"  Available: login.*, registration.*, password.*, session.*, challenge.*,\n" +
-			"             agent.*, ws.*, node.*, bridge.*, scan.*, rate_limit.*, tls.*\n" +
+			"             passkey.*, agent.*, ws.*, node.*, bridge.*, scan.*, rate_limit.*, tls.*\n" +
 			"  Combine:   login.*,session.revoke"
 	case actionViewNodes:
 		m.nodeList = nil

@@ -10,7 +10,7 @@ birdcage ctl
 
 Optionally set `BIRDCAGE_CTL_PROVISIONING_SECRET` to enable agent provisioning and revocation.
 
-The TUI provides menu-driven access to sessions, events, agents, and nodes. Live event streaming supports type filters (e.g. `login.*,session.revoke`). Press `f` during event tailing to open the frame inspector.
+The TUI provides menu-driven access to sessions, events, agents, and nodes. Live event streaming supports type filters (e.g. `login.*,session.revoke,passkey.*`). Press `f` during event tailing to open the frame inspector.
 
 ## REST API
 

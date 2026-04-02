@@ -90,6 +90,19 @@ func migrate() {
 			updated_at TEXT DEFAULT (datetime('now'))
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_node_agent ON node(agent_credential_id)`,
+		`CREATE TABLE IF NOT EXISTS passkey (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES account(id),
+			credential_id BLOB UNIQUE NOT NULL,
+			public_key BLOB NOT NULL,
+			aaguid BLOB NOT NULL,
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL DEFAULT 'Passkey',
+			transports TEXT NOT NULL DEFAULT '',
+			last_used_at TEXT,
+			created_at TEXT DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_passkey_user ON passkey(user_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := store.Exec(s); err != nil {

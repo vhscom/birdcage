@@ -33,16 +33,31 @@ STRIDE analysis for Birdcage. This document maps each threat to the specific mit
 | 19 | **Denial of Service** | Session exhaustion | `session.go:48-71` | `enforceSessionLimit()` caps sessions at 3 per user; oldest sessions expired first | An attacker with valid credentials can only hold 3 sessions |
 | 20 | **Denial of Service** | Request body exhaustion | `middleware.go:280-285` | Global `maxBody` middleware wraps every request body with `MaxBytesReader` (1 MB limit) | None — applied to all routes |
 | 21 | **Elevation of Privilege** | Cross-secret token acceptance | `crypto.go:93-104`, `middleware.go:62-68` | Access tokens verified with `JWT_ACCESS_SECRET`, refresh tokens with `JWT_REFRESH_SECRET` — separate secrets | None — secrets are isolated per token type |
-| 22 | **Elevation of Privilege** | Weak JWT secrets accepted | `main.go:552-563` | `mustEnv()` rejects secrets shorter than 32 characters at startup | No entropy validation — a 32-char repeating string would pass |
+| 22 | **Elevation of Privilege** | Weak JWT secrets accepted | `main.go:606-617` | `mustEnv()` rejects secrets shorter than 32 characters at startup | No entropy validation — a 32-char repeating string would pass |
 | 23 | **Tampering** | SQL injection | `auth.go`, `session.go`, `events.go`, `node.go` | All SQL uses parameterized queries (`?` placeholders) — no string concatenation or interpolation in any query | None — parameterized queries are the standard defense |
+
+### WebAuthn / Passkey Surface
+
+| # | Category | Threat | Component | Mitigation | Residual Risk |
+|---|----------|--------|-----------|------------|---------------|
+| A1 | **Spoofing** | Phishing via relay attack (attacker proxies WebAuthn ceremony) | `webauthn.go:19-30` | `RPOrigins` restricted to `cfg.BaseURL`; `RPID` bound to hostname — browser will not sign assertions for a different origin | None with standard authenticators; compromised browser extensions could bypass |
+| A2 | **Spoofing** | Passkey cloning / authenticator duplication | `webauthn.go:201-202`, `webauthn.go:308-310` | Sign count checked on every login via `FinishPasskeyLogin()`; `last_used_at` updated; anomalous sign count regression indicates cloning | `go-webauthn` logs a `CloneWarning` but does not reject — Birdcage does not currently block on clone detection |
+| A3 | **Tampering** | Challenge replay — reuse begin response | `webauthn.go:106-108`, `webauthn.go:119-122` | Challenge is consumed atomically (read-and-clear under mutex) on finish; a replayed challenge gets `NO_CHALLENGE` error | None — single-slot store means only the latest challenge is valid |
+| A4 | **Tampering** | Registration without authentication | `main.go` route registration | `/account/passkey/begin` and `/account/passkey/finish` wrapped in `requireAuthMiddleware` — must have valid session | None — unauthenticated registration returns 401 |
+| A5 | **Denial of Service** | Challenge exhaustion via repeated begin calls | `main.go` route registration | `rl:passkey` rate limiter (10/5min, user-keyed) on registration; `rl:login` (5/5min, IP-keyed) on login begin | An authenticated user can overwrite their own pending challenge by calling begin repeatedly — this is harmless (single-user) |
+| A6 | **Elevation of Privilege** | Cross-user passkey deletion | `webauthn.go:299-300` | `DELETE FROM passkey WHERE id = ? AND user_id = ?` — user-scoped deletion; cannot delete another user's passkey | None — enforced at query level |
+| A7 | **Information Disclosure** | Credential private key exposure | WebAuthn protocol | Private key never leaves the authenticator; only the public key and credential ID are stored server-side in the `passkey` table | None — by design of the WebAuthn protocol |
+| A8 | **Spoofing** | Passkey login without user verification | `webauthn.go:27` | `UserVerification: protocol.VerificationRequired` set in `AuthenticatorSelection`; authenticator must verify the user (biometric/PIN) before asserting | None — enforced by the authenticator and verified by the library |
+| A9 | **Denial of Service** | In-memory challenge lost on restart | `webauthn.go:80-84` | Challenge store is in-process memory; restart clears pending challenges | **Accepted risk** — challenges are ephemeral (~60s); user simply retries the ceremony |
+| A10 | **Tampering** | Permissions-Policy blocking WebAuthn | `middleware.go:186` | `publickey-credentials-get=(self)` and `publickey-credentials-create=(self)` explicitly permitted | None — browser will allow WebAuthn API calls on same-origin pages |
 
 ### Browser Surface
 
 | # | Category | Threat | Component | Mitigation | Residual Risk |
 |---|----------|--------|-----------|------------|---------------|
 | 24 | **Spoofing** | Cross-site request forgery (CSRF) on auth endpoints | `respond.go:100-110` | All auth cookies set with `SameSite=Strict` — browsers will not attach cookies to cross-origin requests regardless of method | None with current browser support; legacy browsers without SameSite support are not targeted |
-| 25 | **Tampering** | Cross-site scripting (XSS) / script injection | `main.go:156-162`, `middleware.go:181`, `public/index.html` | Per-request CSP nonce for the inline script (`script-src 'nonce-...'`); default CSP blocks all inline scripts on non-HTML responses; all dynamic content rendered via `textContent` (never `innerHTML`); auth cookies are `HttpOnly` (inaccessible to JavaScript) | `style-src 'unsafe-inline'` remains for embedded CSS — style injection is low-risk but not fully mitigated |
-| 26 | **Tampering** | Clickjacking | `middleware.go:178`, `main.go:160` | `X-Frame-Options: DENY` and `frame-ancestors 'none'` in CSP set on all responses | None — both legacy and modern browsers covered |
+| 25 | **Tampering** | Cross-site scripting (XSS) / script injection | `main.go:165-171`, `middleware.go:181`, `public/index.html` | Per-request CSP nonce for the inline script (`script-src 'nonce-...'`); default CSP blocks all inline scripts on non-HTML responses; all dynamic content rendered via `textContent` (never `innerHTML`); auth cookies are `HttpOnly` (inaccessible to JavaScript) | `style-src 'unsafe-inline'` remains for embedded CSS — style injection is low-risk but not fully mitigated |
+| 26 | **Tampering** | Clickjacking | `middleware.go:178`, `main.go:165` | `X-Frame-Options: DENY` and `frame-ancestors 'none'` in CSP set on all responses | None — both legacy and modern browsers covered |
 
 ### Control Proxy Surface
 
@@ -98,11 +113,11 @@ STRIDE analysis for Birdcage. This document maps each threat to the specific mit
 
 | # | Category | Threat | Component | Mitigation | Residual Risk |
 |---|----------|--------|-----------|------------|---------------|
-| 56 | **Spoofing** | IP spoofing via X-Forwarded-For | `respond.go:146-148` | `clientIP()` always returns `RemoteAddr` — no proxy trust headers evaluated; auto-TLS eliminates the need for a reverse proxy | None — spoofing surface eliminated by design |
-| 57 | **Spoofing** | Certificate issuance for wrong domain | `main.go:274` | `autocert.HostWhitelist(host)` restricts cert issuance to the exact hostname from `BASE_URL` | None — only configured hostname accepted |
-| 58 | **Information Disclosure** | Plaintext traffic interception | `main.go:236-240` | Auto-TLS via Let's Encrypt when `BASE_URL` uses `https://`; HSTS header (`max-age=31536000; includeSubDomains`) set on all responses | HTTP dev mode has no encryption — never expose to the internet |
-| 59 | **Denial of Service** | TLS cert exhaustion via random hostnames | `main.go:274` | `HostWhitelist` rejects certificate requests for any hostname not matching BASE_URL | None — rate limits on Let's Encrypt API are an external safeguard |
-| 60 | **Repudiation** | No audit trail for TLS-layer probes | `main.go:279-299` | `tls.rejected` event emitted (once per source IP per minute via `sync.Map` cooldown) when SNI is absent or IP-based; pushed to subscribed agents via `notifySubscribers()` and visible in TUI tail view | Unsupported-version probes (SSLv2, TLS 1.0/1.1) occur before `GetCertificate` fires and are not recorded; cooldown suppresses burst entries from the same scanner |
+| 56 | **Spoofing** | IP spoofing via X-Forwarded-For | `respond.go:156-158` | `clientIP()` always returns `RemoteAddr` — no proxy trust headers evaluated; auto-TLS eliminates the need for a reverse proxy | None — spoofing surface eliminated by design |
+| 57 | **Spoofing** | Certificate issuance for wrong domain | `main.go:297` | `autocert.HostWhitelist(host)` restricts cert issuance to the exact hostname from `BASE_URL` | None — only configured hostname accepted |
+| 58 | **Information Disclosure** | Plaintext traffic interception | `main.go:259-263` | Auto-TLS via Let's Encrypt when `BASE_URL` uses `https://`; HSTS header (`max-age=31536000; includeSubDomains`) set on all responses | HTTP dev mode has no encryption — never expose to the internet |
+| 59 | **Denial of Service** | TLS cert exhaustion via random hostnames | `main.go:297` | `HostWhitelist` rejects certificate requests for any hostname not matching BASE_URL | None — rate limits on Let's Encrypt API are an external safeguard |
+| 60 | **Repudiation** | No audit trail for TLS-layer probes | `main.go:303-314` | `tls.rejected` event emitted (once per source IP per minute via `sync.Map` cooldown) when SNI is absent or IP-based; pushed to subscribed agents via `notifySubscribers()` and visible in TUI tail view | Unsupported-version probes (SSLv2, TLS 1.0/1.1) occur before `GetCertificate` fires and are not recorded; cooldown suppresses burst entries from the same scanner |
 
 ---
 
@@ -118,7 +133,7 @@ STRIDE analysis for Birdcage. This document maps each threat to the specific mit
 | **Long-lived access tokens** | 24h or 7d access tokens | 15-minute access tokens; 7-day refresh tokens with automatic rotation | `crypto.go:22-23` |
 | **Secrets in payload** | Store email, role, permissions in JWT claims | Minimal payload: `uid`, `sid`, `typ`, `gen`, `exp`, `iat` only — all other data fetched server-side | `crypto.go:85-90` |
 | **Missing expiration** | No `exp` claim; tokens valid forever | `exp` set on both access and refresh tokens; `golang-jwt` rejects expired tokens automatically | `crypto.go:99-100` |
-| **Tokens in localStorage** | `localStorage.setItem("token", jwt)` — accessible to any XSS | HTTP-only, Secure, SameSite=Strict cookies — JavaScript cannot read them; CSP nonce blocks inline script injection | `respond.go:100-110`, `main.go:156-165` |
+| **Tokens in localStorage** | `localStorage.setItem("token", jwt)` — accessible to any XSS | HTTP-only, Secure, SameSite=Strict cookies — JavaScript cannot read them; CSP nonce blocks inline script injection | `respond.go:100-110`, `main.go:165-171` |
 
 ---
 

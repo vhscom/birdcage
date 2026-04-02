@@ -15,6 +15,10 @@ func setupTestServer(t *testing.T) *httptest.Server {
 		AccessSecret:  "test-access-secret-that-is-32-chars!!",
 		RefreshSecret: "test-refresh-secret-that-is-32-chars!",
 		CookieSecure:  false,
+		BaseURL:       "https://test.example.com",
+	}
+	if err := initWebAuthn(); err != nil {
+		t.Fatalf("initWebAuthn: %v", err)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /auth/status", handleAuthStatus)
@@ -24,6 +28,13 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	mux.Handle("POST /account/password", requireAuthMiddleware(http.HandlerFunc(handlePasswordChange)))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
 	mux.HandleFunc("GET /health", handleHealth)
+	// Passkey routes
+	mux.Handle("POST /account/passkey/begin", requireAuthMiddleware(http.HandlerFunc(handlePasskeyRegisterBegin)))
+	mux.Handle("POST /account/passkey/finish", requireAuthMiddleware(http.HandlerFunc(handlePasskeyRegisterFinish)))
+	mux.Handle("GET /account/passkeys", requireAuthMiddleware(http.HandlerFunc(handlePasskeyList)))
+	mux.Handle("DELETE /account/passkeys/{id}", requireAuthMiddleware(http.HandlerFunc(handlePasskeyDelete)))
+	mux.Handle("POST /auth/passkey/begin", http.HandlerFunc(handlePasskeyLoginBegin))
+	mux.Handle("POST /auth/passkey/finish", http.HandlerFunc(handlePasskeyLoginFinish))
 	return httptest.NewServer(mux)
 }
 

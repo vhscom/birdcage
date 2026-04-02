@@ -183,7 +183,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 		h.Set("Cross-Origin-Embedder-Policy", "require-corp")
-		h.Set("Permissions-Policy", "accelerometer=(), autoplay=(), camera=(), cross-origin-isolated=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(), screen-wake-lock=(), serial=(), sync-xhr=(self), usb=(), web-share=(), xr-spatial-tracking=()")
+		h.Set("Permissions-Policy", "accelerometer=(), autoplay=(), camera=(), cross-origin-isolated=(), display-capture=(), encrypted-media=(), fullscreen=(), geolocation=(), gyroscope=(), hid=(), idle-detection=(), magnetometer=(), microphone=(), midi=(), payment=(), picture-in-picture=(), publickey-credentials-get=(self), publickey-credentials-create=(self), screen-wake-lock=(), serial=(), sync-xhr=(self), usb=(), web-share=(), xr-spatial-tracking=()")
 		h.Set("Cache-Control", "no-store, max-age=0")
 		h.Del("Server")
 		h.Del("X-Powered-By")

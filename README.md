@@ -66,7 +66,7 @@ Open `https://your-domain.example.com` in a browser and register with the token 
 
 ## What it does
 
-**Auth layer** — Token-gated registration (single owner), login with PBKDF2-SHA384 (210K iterations), adaptive proof-of-work on brute force, JWT dual-token pattern with refresh token rotation and reuse detection, session management with sliding expiry, OWASP security headers.
+**Auth layer** — Token-gated registration (single owner), login with password (PBKDF2-SHA384, 210K iterations) or passkey, adaptive proof-of-work on brute force, JWT dual-token pattern with refresh rotation and reuse detection, session management with sliding expiry, OWASP security headers.
 
 **Control proxy** — HTTP reverse proxy and WebSocket bridge to the claw's web UI. Strips credentials before forwarding, injects gateway token and operator scopes into WebSocket connect frames.
 

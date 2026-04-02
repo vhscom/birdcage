@@ -309,6 +309,8 @@ a:hover{text-decoration:underline}
   </form>
   <div id="login-msg" class="msg"></div>
   <div id="pow-status" class="pow-info hidden">Solving proof-of-work challenge&hellip;</div>
+  <div id="passkey-login-divider" class="divider hidden"></div>
+  <button id="passkey-login-btn" type="button" class="btn btn-ghost hidden">Sign in with passkey</button>
 </div>
 
 <!-- Dashboard -->
@@ -335,6 +337,11 @@ a:hover{text-decoration:underline}
     <button type="submit" class="btn btn-ghost">Change password</button>
   </form>
   <div id="password-msg" class="msg"></div>
+
+  <h2>Passkeys</h2>
+  <div id="passkey-list"></div>
+  <button id="passkey-add-btn" type="button" class="btn btn-ghost">Register new passkey</button>
+  <div id="passkey-msg" class="msg"></div>
 
   <div class="divider"></div>
   <button id="logout-btn" class="btn btn-ghost">Sign out</button>
@@ -380,6 +387,123 @@ function unsettleBackground() {
   document.body.classList.remove('settled');
 }
 
+// --- WebAuthn helpers ---
+const webAuthnAvailable = typeof PublicKeyCredential !== 'undefined';
+
+function b64urlToBuffer(b64) {
+  const s = b64.replace(/-/g,'+').replace(/_/g,'/');
+  const bin = atob(s + '='.repeat((4 - s.length % 4) % 4));
+  return Uint8Array.from(bin, c => c.charCodeAt(0)).buffer;
+}
+
+function bufferToB64url(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  bytes.forEach(b => { s += String.fromCharCode(b); });
+  return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+async function passkeyLogin() {
+  const msg = $('#login-msg');
+  msg.textContent = '';
+  msg.className = 'msg';
+  const r = await api('POST', '/auth/passkey/begin');
+  if (!r.ok) { msg.textContent = r.data.error || 'Failed'; msg.className = 'msg error'; return; }
+  const options = r.data.publicKey;
+  options.challenge = b64urlToBuffer(options.challenge);
+  if (options.allowCredentials) {
+    options.allowCredentials.forEach(c => { c.id = b64urlToBuffer(c.id); });
+  }
+  let cred;
+  try { cred = await navigator.credentials.get({ publicKey: options }); }
+  catch (e) { msg.textContent = 'Passkey cancelled'; msg.className = 'msg error'; return; }
+  const body = {
+    id: cred.id,
+    rawId: bufferToB64url(cred.rawId),
+    type: cred.type,
+    response: {
+      authenticatorData: bufferToB64url(cred.response.authenticatorData),
+      clientDataJSON: bufferToB64url(cred.response.clientDataJSON),
+      signature: bufferToB64url(cred.response.signature),
+      userHandle: cred.response.userHandle ? bufferToB64url(cred.response.userHandle) : '',
+    },
+  };
+  const fin = await api('POST', '/auth/passkey/finish', body);
+  if (fin.ok) {
+    const me = await api('GET', '/account/me');
+    showDashboard(me.data);
+  } else {
+    msg.textContent = fin.data.error || 'Passkey login failed';
+    msg.className = 'msg error';
+  }
+}
+
+async function passkeyRegister() {
+  const msg = $('#passkey-msg');
+  msg.textContent = '';
+  msg.className = 'msg';
+  const name = prompt('Passkey name (e.g. "MacBook Touch ID")') || 'Passkey';
+  const r = await api('POST', '/account/passkey/begin');
+  if (!r.ok) { msg.textContent = r.data.error || 'Failed'; msg.className = 'msg error'; return; }
+  const options = r.data.publicKey;
+  options.challenge = b64urlToBuffer(options.challenge);
+  options.user.id = b64urlToBuffer(options.user.id);
+  if (options.excludeCredentials) {
+    options.excludeCredentials.forEach(c => { c.id = b64urlToBuffer(c.id); });
+  }
+  let cred;
+  try { cred = await navigator.credentials.create({ publicKey: options }); }
+  catch (e) { msg.textContent = 'Registration cancelled'; msg.className = 'msg error'; return; }
+  const body = {
+    id: cred.id,
+    rawId: bufferToB64url(cred.rawId),
+    type: cred.type,
+    response: {
+      attestationObject: bufferToB64url(cred.response.attestationObject),
+      clientDataJSON: bufferToB64url(cred.response.clientDataJSON),
+    },
+  };
+  const fin = await api('POST', '/account/passkey/finish?name=' + encodeURIComponent(name), body);
+  if (fin.ok) {
+    msg.textContent = 'Passkey registered';
+    msg.className = 'msg ok';
+    loadPasskeys();
+  } else {
+    msg.textContent = fin.data.error || 'Registration failed';
+    msg.className = 'msg error';
+  }
+}
+
+async function loadPasskeys() {
+  const r = await api('GET', '/account/passkeys');
+  const list = $('#passkey-list');
+  list.innerHTML = '';
+  if (!r.ok || !r.data.passkeys || r.data.passkeys.length === 0) return;
+  r.data.passkeys.forEach(pk => {
+    const row = document.createElement('div');
+    row.className = 'status-row';
+    const detail = pk.lastUsedAt ? 'last used ' + new Date(pk.lastUsedAt + 'Z').toLocaleDateString() : 'never used';
+    const label = document.createElement('span');
+    label.className = 'status-label';
+    label.textContent = pk.name + ' ';
+    const small = document.createElement('small');
+    small.style.opacity = '.5';
+    small.textContent = detail;
+    label.appendChild(small);
+    const btn = document.createElement('button');
+    btn.className = 'btn-link';
+    btn.textContent = 'remove';
+    row.appendChild(label);
+    row.appendChild(btn);
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete passkey \u201c' + pk.name + '\u201d?')) return;
+      await api('DELETE', '/account/passkeys/' + pk.id);
+      loadPasskeys();
+    });
+    list.appendChild(row);
+  });
+}
+
 // --- Init ---
 async function init() {
   const me = await api('GET', '/account/me');
@@ -394,6 +518,10 @@ async function init() {
     }
     show('#register-view');
   } else {
+    if (webAuthnAvailable && st.ok && st.data.passkeys) {
+      $('#passkey-login-divider').classList.remove('hidden');
+      $('#passkey-login-btn').classList.remove('hidden');
+    }
     show('#login-view');
   }
 }
@@ -475,6 +603,7 @@ function showDashboard(data) {
       gs.className = 'status-value offline';
     }
   }
+  if (webAuthnAvailable) loadPasskeys();
 }
 
 // --- Password change ---
@@ -497,6 +626,10 @@ $('#password-form').addEventListener('submit', async (e) => {
     msg.className = 'msg error';
   }
 });
+
+// --- Passkeys ---
+$('#passkey-login-btn').addEventListener('click', passkeyLogin);
+$('#passkey-add-btn').addEventListener('click', passkeyRegister);
 
 // --- Logout ---
 $('#logout-btn').addEventListener('click', async () => {

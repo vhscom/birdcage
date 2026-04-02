@@ -27,7 +27,7 @@ func TestMigrateIdempotent(t *testing.T) {
 func TestSchemaVerification(t *testing.T) {
 	initDB(":memory:")
 
-	expected := []string{"account", "session", "security_event", "agent_credential", "node"}
+	expected := []string{"account", "session", "security_event", "agent_credential", "node", "passkey"}
 	for _, table := range expected {
 		var name string
 		err := store.QueryRow(

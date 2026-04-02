@@ -37,6 +37,13 @@ func TestSecurityHeaders(t *testing.T) {
 	if !strings.Contains(csp, "default-src 'self'") {
 		t.Errorf("CSP missing default-src 'self', got %q", csp)
 	}
+	pp := rec.Header().Get("Permissions-Policy")
+	if !strings.Contains(pp, "publickey-credentials-get=(self)") {
+		t.Errorf("Permissions-Policy missing publickey-credentials-get=(self), got %q", pp)
+	}
+	if !strings.Contains(pp, "publickey-credentials-create=(self)") {
+		t.Errorf("Permissions-Policy missing publickey-credentials-create=(self), got %q", pp)
+	}
 }
 
 func TestAccessLog(t *testing.T) {

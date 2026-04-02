@@ -145,6 +145,10 @@ func runServe() {
 
 	cfg = loadConfig()
 	initDB(cfg.DBPath)
+	if err := initWebAuthn(); err != nil {
+		slog.Error("failed to initialize webauthn", "error", err)
+		os.Exit(1)
+	}
 	startEventPruner()
 
 	// Ensure agent credential exists for AGENT_KEY
@@ -193,6 +197,17 @@ func runServe() {
 	// --- Account management (authenticated) ---
 	mux.Handle("POST /account/password", passwordRL(requireAuthMiddleware(http.HandlerFunc(handlePasswordChange))))
 	mux.Handle("GET /account/me", requireAuthMiddleware(http.HandlerFunc(handleMe)))
+
+	// --- Passkey management (authenticated) ---
+	passkeyRL := rateLimit(rateConfig{Window: 5 * time.Minute, Max: 10, Prefix: "rl:passkey", KeyFunc: userKey})
+	mux.Handle("POST /account/passkey/begin", passkeyRL(requireAuthMiddleware(http.HandlerFunc(handlePasskeyRegisterBegin))))
+	mux.Handle("POST /account/passkey/finish", passkeyRL(requireAuthMiddleware(http.HandlerFunc(handlePasskeyRegisterFinish))))
+	mux.Handle("GET /account/passkeys", requireAuthMiddleware(http.HandlerFunc(handlePasskeyList)))
+	mux.Handle("DELETE /account/passkeys/{id}", requireAuthMiddleware(http.HandlerFunc(handlePasskeyDelete)))
+
+	// --- Passkey login (public, rate-limited) ---
+	mux.Handle("POST /auth/passkey/begin", loginRL(http.HandlerFunc(handlePasskeyLoginBegin)))
+	mux.Handle("POST /auth/passkey/finish", loginRL(http.HandlerFunc(handlePasskeyLoginFinish)))
 
 	// --- Agent WebSocket (bearer token auth, cloaked from public IPs) ---
 	mux.Handle("GET /ws", cloakMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

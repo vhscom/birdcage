@@ -169,9 +169,10 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]any{
-		"userId":  claims.UID,
-		"email":   email,
-		"gateway": gatewayStatus,
+		"userId":       claims.UID,
+		"email":        email,
+		"gateway":      gatewayStatus,
+		"passkeyCount": passkeyCount(),
 	})
 }
 
@@ -185,6 +186,9 @@ func handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"registered": count > 0}
 	if count == 0 && cfg.RegistrationToken != "" {
 		resp["requiresToken"] = true
+	}
+	if count > 0 {
+		resp["passkeys"] = hasPasskeys()
 	}
 	jsonOK(w, resp)
 }

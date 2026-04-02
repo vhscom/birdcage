@@ -290,3 +290,140 @@ sequenceDiagram
 ```
 
 **Source:** [`auth.go:114-153`](../auth.go) | [`session.go:103-107`](../session.go) | [`crypto.go:29-43`](../crypto.go)
+
+---
+
+## 7. Passkey Registration
+
+Owner registers a passkey (Touch ID, Face ID, security key) from the dashboard. Requires an active session — the passkey is additive, not a password replacement.
+
+```mermaid
+sequenceDiagram
+  participant U as Browser
+  participant RL as Rate Limiter
+  participant MW as Auth Middleware
+  participant H as Handler
+  participant WA as WebAuthn
+  participant DB as SQLite
+  participant Auth as Authenticator
+
+  U->>RL: POST /account/passkey/begin
+  Note over RL: rl:passkey 10/5min — user-keyed
+  RL->>MW: requireAuth validates token + session
+  MW-->>H: Authenticated (claims in context)
+
+  H->>DB: SELECT email FROM account WHERE id = ?
+  H->>DB: SELECT credential_id, public_key, ... FROM passkey WHERE user_id = ?
+  Note over H: Loads existing credentials for exclusion list
+
+  H->>WA: BeginRegistration(user)
+  Note over WA: Generates challenge (random bytes)<br/>ResidentKey: Required<br/>UserVerification: Required
+  WA-->>H: CredentialCreation options + SessionData
+
+  H->>H: Store SessionData in memory (single-slot, mutex-guarded)
+  H->>DB: emitEvent("passkey.register_begin", ...)
+  H-->>U: 200 {publicKey: {challenge, rp, user, excludeCredentials, ...}}
+
+  Note over U: Browser calls navigator.credentials.create({publicKey})
+  U->>Auth: Biometric / PIN prompt
+  Auth-->>U: PublicKeyCredential (attestation)
+
+  U->>RL: POST /account/passkey/finish?name=MacBook+Touch+ID
+  RL->>MW: requireAuth validates token + session
+  MW-->>H: Authenticated (claims in context)
+
+  H->>H: Load + clear SessionData from memory
+
+  alt No pending challenge
+    H-->>U: 400 {code: "NO_CHALLENGE"}
+  end
+
+  H->>WA: FinishRegistration(user, sessionData, request)
+  Note over WA: Validates attestation, origin, challenge<br/>Extracts public key + credential ID
+
+  alt Verification failed
+    H->>DB: emitEvent("passkey.register_failure", ...)
+    H-->>U: 400 {code: "REGISTRATION_FAILED"}
+  end
+
+  WA-->>H: *Credential
+
+  H->>DB: INSERT INTO passkey (user_id, credential_id, public_key, aaguid, ...)
+  H->>DB: emitEvent("passkey.register_success", ...)
+  H-->>U: 201 {id, name}
+```
+
+**Source:** [`webauthn.go:89-155`](../webauthn.go)
+
+---
+
+## 8. Passkey Login
+
+Passwordless login using a registered passkey. Uses discoverable credentials — no email field required. Creates the same session and token pair as password login.
+
+```mermaid
+sequenceDiagram
+  participant U as Browser
+  participant RL as Rate Limiter
+  participant H as Handler
+  participant WA as WebAuthn
+  participant DB as SQLite
+  participant SS as Session
+  participant Auth as Authenticator
+
+  U->>RL: POST /auth/passkey/begin
+  Note over RL: rl:login 5/5min — IP-keyed
+
+  alt Rate limit exceeded
+    RL-->>U: 429 {error: "Too many requests"}
+  end
+
+  RL->>H: handlePasskeyLoginBegin()
+  H->>WA: BeginDiscoverableLogin()
+  Note over WA: Generates challenge<br/>No user specified — authenticator provides user handle
+  WA-->>H: CredentialAssertion options + SessionData
+
+  H->>H: Store SessionData in memory
+  H->>DB: emitEvent("passkey.login_begin", ...)
+  H-->>U: 200 {publicKey: {challenge, rpId, ...}}
+
+  Note over U: Browser calls navigator.credentials.get({publicKey})
+  U->>Auth: Biometric / PIN prompt
+  Auth-->>U: PublicKeyCredential (assertion + userHandle)
+
+  U->>RL: POST /auth/passkey/finish
+  RL->>H: handlePasskeyLoginFinish()
+
+  H->>H: Load + clear SessionData from memory
+
+  alt No pending challenge
+    H-->>U: 400 {code: "NO_CHALLENGE"}
+  end
+
+  H->>WA: FinishPasskeyLogin(handler, sessionData, request)
+  Note over WA: Calls handler(rawID, userHandle) to resolve user<br/>Verifies signature, origin, challenge, sign count
+
+  H->>H: handler decodes userHandle → user ID
+  H->>DB: SELECT email, credentials FROM account + passkey WHERE id = ?
+
+  alt Verification failed
+    H->>DB: emitEvent("passkey.login_failure", ...)
+    H-->>U: 401 {code: "INVALID_CREDENTIAL"}
+  end
+
+  WA-->>H: User + *Credential (updated sign count)
+
+  H->>DB: UPDATE passkey SET sign_count = ?, last_used_at = datetime('now')
+
+  H->>SS: createSession(userId, userAgent, ip)
+  SS->>DB: INSERT INTO session (..., refresh_gen=0)
+  SS->>SS: enforceSessionLimit() — max 3 per user
+  SS-->>H: sessionId
+
+  H->>H: signToken(access) + signRefreshToken(refresh, gen=0)
+  H->>U: Set-Cookie: access_token + refresh_token
+  H->>DB: emitEvent("passkey.login_success", ...)
+  H-->>U: 200 {success: true}
+```
+
+**Source:** [`webauthn.go:158-216`](../webauthn.go) | [`session.go:25-71`](../session.go)
